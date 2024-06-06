@@ -1,0 +1,45 @@
+import pandas as pd
+import multiprocessing
+
+def read_excel_chunk(file_path, sheetname, nrows, skiprows):
+    """
+    Read a chunk of an Excel file.
+    """
+    try:
+        # Read the specified chunk of the Excel file
+        chunk = pd.read_excel(file_path, sheet_name=sheetname, nrows=nrows, skiprows=skiprows, header=None)
+        return chunk
+    except Exception as e:
+        print(f"Error reading chunk: {e}")
+        return None
+
+if __name__ == "__main__":
+    # Specify the path to the Excel file
+    excel_file_path = "path/to/your/file.xlsx"
+    # Specify the sheet name
+    sheet_name = "Sheet1"
+    # Number of rows to read per chunk
+    chunk_size = 1000
+    # Total number of rows in the Excel file
+    total_rows = pd.read_excel(excel_file_path, sheet_name=sheet_name).shape[0]
+
+    # Determine the number of chunks
+    num_chunks = (total_rows + chunk_size - 1) // chunk_size
+
+    # Create a pool of worker processes
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        # Iterate over each chunk
+        results = []
+        for i in range(num_chunks):
+            # Calculate the start and end rows for the current chunk
+            start_row = i * chunk_size
+            end_row = min((i + 1) * chunk_size, total_rows)
+            # Read the current chunk asynchronously
+            results.append(pool.apply_async(read_excel_chunk, (excel_file_path, sheet_name, end_row - start_row, start_row)))
+
+        # Retrieve the results
+        for result in results:
+            chunk = result.get()
+            # Process the chunk as needed
+            if chunk is not None:
+                print("Chunk shape:", chunk.shape)
