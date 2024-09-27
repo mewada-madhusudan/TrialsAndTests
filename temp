@@ -23,9 +23,9 @@ def setup_database():
 
     # Insert sample data (you would replace this with your actual data)
     c.execute(
-        "INSERT OR IGNORE INTO applications VALUES (1, 'ExcelReportNinja_GFITECH_37', '\\\\Asiapac.ad.jpmorganchase.com\\corp2\\COFI\\APCORP2COFISHARE00002\\STO PyHub\\UAT\\ExcelReportNinja_GFITECH_37\\ExcelReportNinja_GFITECH_37.exe')")
+        "INSERT OR IGNORE INTO applications VALUES (1, 'AppName', 'sharedpath\\appName.exe')")
     c.execute("INSERT OR IGNORE INTO applications VALUES (2, 'App 2', '\\\\shared_drive\\path\\to\\app2.exe')")
-    c.execute("INSERT OR IGNORE INTO user_access VALUES (1, 'I811963', 1)")
+    c.execute("INSERT OR IGNORE INTO user_access VALUES (1, 'ID1', 1)")
     c.execute("INSERT OR IGNORE INTO user_access VALUES (2, 'I8', 2)")
 
     conn.commit()
