@@ -1,0 +1,87 @@
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
+from PyQt6.QtGui import QPixmap, QFont, QIcon
+from PyQt6.QtCore import Qt
+
+class UserSidebar(QWidget):
+    def __init__(self, user_details):
+        super().__init__()
+        self.user_details = user_details
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+
+        # User image
+        image_label = QLabel()
+        pixmap = QPixmap("path/to/default/image.png")  # Replace with actual path
+        pixmap = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio)
+        image_label.setPixmap(pixmap)
+        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(image_label)
+
+        # User name
+        name_label = QLabel(self.user_details.get('name', ''))
+        name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_label.setFont(QFont('Arial', 14, QFont.Weight.Bold))
+        layout.addWidget(name_label)
+
+        # User details
+        details = [
+            ('SID', 'user'),
+            ('Email', 'mail'),
+            ('Job Title', 'briefcase'),
+            ('Manager', 'users'),
+            ('Cost Center', 'building')
+        ]
+
+        for label, icon_name in details:
+            detail_widget = self.create_detail_widget(label, self.user_details.get(label.lower().replace(' ', '_'), ''), icon_name)
+            layout.addWidget(detail_widget)
+
+        # Exit button
+        exit_button = QPushButton("EXIT")
+        exit_button.setStyleSheet("""
+            QPushButton {
+                background-color: #ef4444;
+                color: white;
+                padding: 10px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #dc2626;
+            }
+        """)
+        layout.addWidget(exit_button)
+
+        layout.addStretch()
+        self.setLayout(layout)
+        self.setStyleSheet("background-color: #1d4ed8; color: white;")
+        self.setFixedWidth(250)
+
+    def create_detail_widget(self, label, value, icon_name):
+        widget = QFrame()
+        layout = QHBoxLayout()
+        
+        icon_label = QLabel()
+        icon = QIcon(f"path/to/{icon_name}_icon.png")  # Replace with actual path
+        icon_label.setPixmap(icon.pixmap(18, 18))
+        layout.addWidget(icon_label)
+
+        text_label = QLabel(f"{label}: {value}")
+        layout.addWidget(text_label)
+        
+        widget.setLayout(layout)
+        return widget
+
+# Usage:
+# user_data = {
+#     'sid': '123456',
+#     'name': 'Rahul',
+#     'email': 'rahul@example.com',
+#     'job_title': 'Software Engineer',
+#     'manager': 'John Doe',
+#     'cost_center': 'CORPORATE'
+# }
+# sidebar = UserSidebar(user_data)
