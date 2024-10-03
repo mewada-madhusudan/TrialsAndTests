@@ -1,15 +1,12 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea
 from PyQt6.QtGui import QPixmap, QFont, QIcon, QImage
 from PyQt6.QtCore import Qt, QByteArray
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
-import sys
+import base64
 
 class UserSidebar(QWidget):
     def __init__(self, user_details):
         super().__init__()
         self.user_details = user_details
-        self.network_manager = QNetworkAccessManager()
-        self.network_manager.finished.connect(self.handle_image_response)
         self.image_label = None
         self.init_ui()
 
@@ -38,9 +35,9 @@ class UserSidebar(QWidget):
             }
         """)
         
-        # Load image from URL
-        if 'image_url' in self.user_details:
-            self.load_image_from_url(self.user_details['image_url'])
+        # Load image from base64
+        if 'image_data' in self.user_details:
+            self.load_image_from_base64(self.user_details['image_data'])
         
         top_layout.addWidget(self.image_label)
 
@@ -149,30 +146,34 @@ class UserSidebar(QWidget):
         
         return widget
 
-    def load_image_from_url(self, url):
-        request = QNetworkRequest(url)
-        self.network_manager.get(request)
-
-    def handle_image_response(self, reply):
-        if reply.error():
-            print(f"Error loading image: {reply.errorString()}")
-            return
-
-        data = reply.readAll()
-        image = QImage()
-        image.loadFromData(data)
-
-        if not image.isNull():
-            # Create circular mask for the image
-            pixmap = QPixmap.fromImage(image)
-            pixmap = pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatioByExpanding, 
-                                 Qt.TransformationMode.SmoothTransformation)
+    def load_image_from_base64(self, base64_string):
+        try:
+            # Remove the data URL prefix if present
+            if ',' in base64_string:
+                base64_string = base64_string.split(',')[1]
             
-            # Create circular mask
-            rounded = QPixmap(pixmap.size())
-            rounded.fill(Qt.GlobalColor.transparent)
+            # Decode base64 string
+            image_data = base64.b64decode(base64_string)
             
-            self.image_label.setPixmap(pixmap)
+            # Create QImage from the decoded data
+            image = QImage()
+            image.loadFromData(image_data)
+            
+            if not image.isNull():
+                # Convert to pixmap and scale
+                pixmap = QPixmap.fromImage(image)
+                pixmap = pixmap.scaled(80, 80, 
+                                     Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                     Qt.TransformationMode.SmoothTransformation)
+                
+                # Create circular mask
+                rounded = QPixmap(pixmap.size())
+                rounded.fill(Qt.GlobalColor.transparent)
+                
+                self.image_label.setPixmap(pixmap)
+            
+        except Exception as e:
+            print(f"Error loading image: {str(e)}")
 
 # Usage example:
 # user_data = {
@@ -182,6 +183,6 @@ class UserSidebar(QWidget):
 #     'job_title': 'Software Engineer',
 #     'manager': 'John Doe',
 #     'cost_center': 'CORPORATE',
-#     'image_url': 'https://example.com/profile.jpg'
+#     'image_data': 'data:image/gif;base64,R0lGODlh...'  # Your base64 image string here
 # }
 # sidebar = UserSidebar(user_data)
