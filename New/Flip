@@ -1,0 +1,181 @@
+class FlippableApplicationTile(QFrame):
+    def __init__(self, app_name, app_description, shared_drive_path, environment,
+                 release_date, validity_period, version_number, registration_id, parent=None):
+        super().__init__(parent)
+        # Store all the data
+        self.app_name = app_name
+        self.app_description = app_description
+        self.shared_drive_path = shared_drive_path
+        self.environment = environment
+        self.release_date = release_date
+        self.validity_period = validity_period
+        self.version_number = version_number
+        self.registration_id = registration_id
+        
+        # Additional setup
+        self.install_path = os.path.join("D:\Download", app_name)
+        self.db = Database("launcher.db")
+        self.installed_version = self.get_installed_version()
+        self.installed = self.is_app_installed(f'{self.install_path}\{self.app_name}.exe')
+        self.is_expired = self.check_validity()
+        self.update_available = self.check_update_available()
+        
+        # Initialize flip state
+        self.is_flipped = False
+        
+        # Create both sides of the tile
+        self.front_widget = QWidget()
+        self.back_widget = QWidget()
+        self.stacked_layout = QStackedLayout(self)
+        
+        self.setup_front_ui()
+        self.setup_back_ui()
+        
+        # Add both sides to the stacked layout
+        self.stacked_layout.addWidget(self.front_widget)
+        self.stacked_layout.addWidget(self.back_widget)
+        
+        # Setup mouse click handling
+        self.mousePressEvent = self.on_tile_clicked
+        
+        # Set initial styling
+        self.setFixedHeight(200)
+        self.setup_styles()
+
+    def setup_styles(self):
+        self.setStyleSheet("""
+            FlippableApplicationTile {
+                background-color: white;
+                border-radius: 10px;
+                border: 1px solid #e0e0e0;
+            }
+            FlippableApplicationTile:hover {
+                border: 1px solid #4a90e2;
+                box-shadow: 0 4px 8px rgba(74, 144, 226, 0.1);
+            }
+        """)
+
+    def setup_front_ui(self):
+        # This contains the original tile UI
+        layout = QVBoxLayout(self.front_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Header layout with name and environment label
+        header_layout = QHBoxLayout()
+        self.name_label = QLabel(self.app_name)
+        self.name_label.setStyleSheet("font-weight: bold; font-size: 18px; color: #333;")
+        header_layout.addWidget(self.name_label)
+
+        self.env_label = EnvironmentLabel(self.environment, self.environment)
+        header_layout.addWidget(self.env_label, alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(header_layout)
+
+        # Description label
+        self.description_label = QLabel(
+            self.app_description[:80] + "..." if len(self.app_description) > 80 else self.app_description)
+        self.description_label.setWordWrap(True)
+        self.description_label.setStyleSheet("color: #666; margin-bottom: 10px;")
+        layout.addWidget(self.description_label)
+
+        # Button layout
+        button_layout = self.create_button_layout()
+        layout.addLayout(button_layout)
+
+        # Status and progress
+        self.setup_status_and_progress(layout)
+
+    def setup_back_ui(self):
+        layout = QVBoxLayout(self.back_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Style for detail labels
+        detail_style = """
+            QLabel {
+                color: #333;
+                font-size: 14px;
+                padding: 5px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+                margin: 2px;
+            }
+        """
+
+        # Add details in a grid layout
+        details_layout = QGridLayout()
+        details_layout.setSpacing(10)
+
+        # Registration ID
+        reg_label = QLabel("Registration ID:")
+        reg_value = QLabel(str(self.registration_id))
+        reg_label.setStyleSheet(detail_style)
+        reg_value.setStyleSheet(detail_style)
+        details_layout.addWidget(reg_label, 0, 0)
+        details_layout.addWidget(reg_value, 0, 1)
+
+        # Release Date
+        date_label = QLabel("Release Date:")
+        date_value = QLabel(self.release_date)
+        date_label.setStyleSheet(detail_style)
+        date_value.setStyleSheet(detail_style)
+        details_layout.addWidget(date_label, 1, 0)
+        details_layout.addWidget(date_value, 1, 1)
+
+        # Status
+        status_label = QLabel("Status:")
+        status_text = "Expired" if self.is_expired else "Active"
+        status_value = QLabel(status_text)
+        status_label.setStyleSheet(detail_style)
+        status_value.setStyleSheet(detail_style)
+        details_layout.addWidget(status_label, 2, 0)
+        details_layout.addWidget(status_value, 2, 1)
+
+        # Reason (if expired)
+        if self.is_expired:
+            reason_label = QLabel("Reason:")
+            reason_value = QLabel("Validity period exceeded")
+            reason_label.setStyleSheet(detail_style)
+            reason_value.setStyleSheet(detail_style)
+            details_layout.addWidget(reason_label, 3, 0)
+            details_layout.addWidget(reason_value, 3, 1)
+
+        # Contact
+        contact_label = QLabel("Contact:")
+        contact_value = QLabel("IT Support Desk")
+        contact_label.setStyleSheet(detail_style)
+        contact_value.setStyleSheet(detail_style)
+        details_layout.addWidget(contact_label, 4, 0)
+        details_layout.addWidget(contact_value, 4, 1)
+
+        layout.addLayout(details_layout)
+        
+        # Add a "Back" button
+        back_button = QPushButton("Back to App")
+        back_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a90e2;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 5px;
+                font-weight: bold;
+                margin-top: 10px;
+            }
+            QPushButton:hover {
+                background-color: #357abd;
+            }
+        """)
+        back_button.clicked.connect(self.flip_tile)
+        layout.addWidget(back_button, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def on_tile_clicked(self, event):
+        if self.is_expired:
+            self.flip_tile()
+
+    def flip_tile(self):
+        # Animate the flip
+        self.is_flipped = not self.is_flipped
+        self.stacked_layout.setCurrentIndex(1 if self.is_flipped else 0)
+
+    # Include all other methods from the original ApplicationTile class here
+    # (is_app_installed, install_application, launch_application, etc.)
+    # They remain unchanged from the original implementation
