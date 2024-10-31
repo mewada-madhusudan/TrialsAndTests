@@ -1,0 +1,109 @@
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt6.QtCore import Qt
+
+def back_ui(parent=None, iahub_id="", release_date="", status="", validity=""):
+    """
+    Creates and returns a widget containing the back UI layout.
+    
+    Args:
+        parent: Parent widget
+        iahub_id (str): IAHub identification number
+        release_date (str): Release date of the ID
+        status (str): Current status of the ID
+        validity (str): Validity period of the ID
+        
+    Returns:
+        QWidget: The configured back UI widget
+    """
+    # Create main widget and layout
+    back_widget = QWidget(parent)
+    main_layout = QVBoxLayout(back_widget)
+    main_layout.setContentsMargins(20, 20, 20, 20)
+    main_layout.setSpacing(15)
+
+    # Style definitions
+    container_style = """
+        QWidget {
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+        }
+    """
+    
+    label_style = """
+        QLabel {
+            color: #666666;
+            font-size: 13px;
+            font-weight: normal;
+        }
+    """
+    
+    value_style = """
+        QLabel {
+            color: #2c3e50;
+            font-size: 15px;
+            font-weight: bold;
+        }
+    """
+
+    expired_note_style = """
+        QLabel {
+            color: #e74c3c;
+            font-size: 14px;
+            font-weight: bold;
+            background-color: #fadbd8;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    """
+
+    # Function to create detail containers
+    def create_detail_container(title, value):
+        container = QWidget()
+        container.setStyleSheet(container_style)
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(5)
+
+        # Title
+        title_label = QLabel(title)
+        title_label.setStyleSheet(label_style)
+        container_layout.addWidget(title_label)
+
+        # Value
+        value_label = QLabel(str(value))
+        value_label.setStyleSheet(value_style)
+        value_label.setWordWrap(True)
+        container_layout.addWidget(value_label)
+
+        return container
+
+    # Add detail containers
+    details = [
+        ("IAHub ID", iahub_id),
+        ("Release Date", release_date),
+        ("Status", status),
+        ("Validity", validity)
+    ]
+
+    for title, value in details:
+        container = create_detail_container(title, value)
+        main_layout.addWidget(container)
+
+    # Add expired note if status is "Expired"
+    if status.lower() == "expired":
+        note_container = QWidget()
+        note_layout = QVBoxLayout(note_container)
+        
+        expired_note = QLabel("⚠️ This ID has expired. Please contact IT Support for renewal.")
+        expired_note.setStyleSheet(expired_note_style)
+        expired_note.setWordWrap(True)
+        expired_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        note_layout.addWidget(expired_note)
+        main_layout.addWidget(note_container)
+
+    # Add stretch to push everything to the top
+    main_layout.addStretch()
+
+    return back_widget
