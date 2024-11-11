@@ -1,0 +1,86 @@
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.all_tiles = []
+        self.username = getpass.getuser()
+        self.db = Database("launcher.db")
+        self.setWindowTitle("Application Launcher")
+        self.setMinimumSize(1200, 720)
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f5f6fa;
+            }
+        """)
+
+        # [Previous initialization code remains the same until the search bar section]
+
+        # Applications title and search bar
+        header_widget = QWidget()
+        header_layout = QVBoxLayout(header_widget)
+        header_layout.setSpacing(15)
+
+        app_title = QLabel("Applications")
+        app_title.setStyleSheet("""
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+        """)
+        header_layout.addWidget(app_title)
+
+        # Create a horizontal layout for search bar and refresh button
+        search_container = QWidget()
+        search_layout = QHBoxLayout(search_container)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(10)
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 Search applications...")
+        self.search_bar.textChanged.connect(self.filter_applications)
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                border: 2px solid #e0e0e0;
+                border-radius: 25px;
+                padding: 12px 20px;
+                font-size: 14px;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border-color: #4a90e2;
+                outline: none;
+            }
+        """)
+
+        refresh_button = QPushButton("⟳")  # Using a unicode refresh symbol
+        refresh_button.clicked.connect(self.refresh_applications)
+        refresh_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a90e2;
+                color: white;
+                border: none;
+                border-radius: 20px;
+                padding: 10px 15px;
+                font-size: 18px;
+                min-width: 40px;
+                max-width: 40px;
+                min-height: 40px;
+                max-height: 40px;
+            }
+            QPushButton:hover {
+                background-color: #357abd;
+            }
+        """)
+
+        search_layout.addWidget(self.search_bar)
+        search_layout.addWidget(refresh_button)
+        header_layout.addWidget(search_container)
+        content_layout.addWidget(header_widget)
+
+        # [Rest of the initialization code remains the same]
+
+    def refresh_applications(self):
+        """Refresh the applications list"""
+        self.search_bar.clear()  # Clear the search bar
+        self.db = Database("launcher.db")  # Reconnect to the database
+        self.load_applications()  # Reload the applications
+
+    # [All other methods remain the same]
