@@ -27,52 +27,71 @@ class MainWindow(QMainWindow):
         """)
         header_layout.addWidget(app_title)
 
-        # Create a horizontal layout for search bar and refresh button
-        search_container = QWidget()
-        search_layout = QHBoxLayout(search_container)
-        search_layout.setContentsMargins(0, 0, 0, 0)
+        # Create a custom widget for the search bar with icons
+        search_widget = QWidget()
+        search_layout = QHBoxLayout(search_widget)
+        search_layout.setContentsMargins(15, 0, 15, 0)
         search_layout.setSpacing(10)
 
+        # Search icon
+        search_icon = QLabel("🔍")
+        search_icon.setStyleSheet("""
+            font-size: 16px;
+            color: #6c757d;
+        """)
+        
+        # Search input
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("🔍 Search applications...")
+        self.search_bar.setPlaceholderText("Search applications...")
         self.search_bar.textChanged.connect(self.filter_applications)
         self.search_bar.setStyleSheet("""
             QLineEdit {
-                border: 2px solid #e0e0e0;
-                border-radius: 25px;
-                padding: 12px 20px;
+                border: none;
+                padding: 12px 0px;
                 font-size: 14px;
-                background-color: white;
+                background-color: transparent;
             }
             QLineEdit:focus {
-                border-color: #4a90e2;
                 outline: none;
             }
         """)
 
-        refresh_button = QPushButton("⟳")  # Using a unicode refresh symbol
+        # Refresh button
+        refresh_button = QPushButton("⟳")
+        refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
         refresh_button.clicked.connect(self.refresh_applications)
         refresh_button.setStyleSheet("""
             QPushButton {
-                background-color: #4a90e2;
-                color: white;
+                background-color: transparent;
                 border: none;
-                border-radius: 20px;
-                padding: 10px 15px;
+                color: #6c757d;
                 font-size: 18px;
-                min-width: 40px;
-                max-width: 40px;
-                min-height: 40px;
-                max-height: 40px;
+                padding: 5px;
+                min-width: 30px;
             }
             QPushButton:hover {
-                background-color: #357abd;
+                color: #4a90e2;
             }
         """)
 
-        search_layout.addWidget(self.search_bar)
+        # Add widgets to search layout
+        search_layout.addWidget(search_icon)
+        search_layout.addWidget(self.search_bar, 1)  # 1 is the stretch factor
         search_layout.addWidget(refresh_button)
-        header_layout.addWidget(search_container)
+
+        # Style the search widget container
+        search_widget.setStyleSheet("""
+            QWidget {
+                background-color: white;
+                border: 2px solid #e0e0e0;
+                border-radius: 25px;
+            }
+            QWidget:focus-within {
+                border-color: #4a90e2;
+            }
+        """)
+
+        header_layout.addWidget(search_widget)
         content_layout.addWidget(header_widget)
 
         # [Rest of the initialization code remains the same]
