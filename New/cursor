@@ -1,0 +1,117 @@
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        # Previous initialization code remains same...
+
+        # Create a custom animated cursor for refresh
+        self.create_refresh_cursor()
+
+        # In the search bar section, update the refresh button initialization:
+        refresh_button = QPushButton("⟳")
+        refresh_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_button.clicked.connect(self.start_refresh)
+        refresh_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                color: #6c757d;
+                font-size: 18px;
+                padding: 5px;
+                min-width: 30px;
+            }
+            QPushButton:hover {
+                color: #4a90e2;
+            }
+        """)
+
+    def create_refresh_cursor(self):
+        """Create an SVG-based animated cursor for refresh operation"""
+        self.refresh_cursor = QCursor(Qt.CursorShape.WaitCursor)
+        
+        # Create the SVG content for the rotating circle
+        svg_content = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+                .spinner {
+                    animation: spin 1s linear infinite;
+                    transform-origin: center;
+                }
+            </style>
+            <circle class="spinner" cx="16" cy="16" r="14" 
+                    fill="none" 
+                    stroke="#4a90e2" 
+                    stroke-width="3"
+                    stroke-dasharray="60 30"/>
+        </svg>
+        """
+        
+        # Create a QMovie for the animation
+        self.refresh_animation = QMovie()
+        self.refresh_animation.setFileName("refresh_cursor.gif")  # You'll need to create this GIF
+        self.refresh_animation.setCacheMode(QMovie.CacheMode.CacheAll)
+        self.refresh_animation.setSpeed(150)  # Adjust animation speed
+
+    def start_refresh(self):
+        """Start the refresh process with animated cursor"""
+        # Show the loading cursor
+        QApplication.setOverrideCursor(self.refresh_cursor)
+        
+        # Start a timer to simulate the refresh process
+        QTimer.singleShot(100, self.perform_refresh)
+
+    def perform_refresh(self):
+        """Perform the actual refresh operation"""
+        try:
+            # Perform the refresh operation
+            self.search_bar.clear()
+            self.db = Database("launcher.db")
+            self.load_applications()
+            
+        finally:
+            # Restore the normal cursor
+            QApplication.restoreOverrideCursor()
+
+    def create_loading_gif(self):
+        """Create a loading animation GIF using PIL"""
+        try:
+            from PIL import Image, ImageDraw
+            
+            # Create a series of frames for the loading animation
+            frames = []
+            size = (32, 32)
+            for angle in range(0, 360, 30):  # 12 frames
+                # Create a new image with transparent background
+                image = Image.new('RGBA', size, (0, 0, 0, 0))
+                draw = ImageDraw.Draw(image)
+                
+                # Draw an arc (part of a circle)
+                bbox = [2, 2, 30, 30]
+                draw.arc(bbox, angle, angle + 300, fill='#4a90e2', width=3)
+                
+                frames.append(image)
+            
+            # Save as animated GIF
+            frames[0].save(
+                'refresh_cursor.gif',
+                save_all=True,
+                append_images=frames[1:],
+                duration=50,  # Duration for each frame in milliseconds
+                loop=0  # Loop forever
+            )
+            
+        except ImportError:
+            print("PIL library not available. Using default wait cursor.")
+            return False
+        
+        return True
+
+    def showEvent(self, event):
+        """Override showEvent to create the loading GIF when the window first shows"""
+        super().showEvent(event)
+        if not hasattr(self, '_gif_created'):
+            self.create_loading_gif()
+            self._gif_created = True
