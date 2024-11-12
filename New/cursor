@@ -11,9 +11,9 @@ class MainWindow(QMainWindow):
         self.cursor_rotation = 0
         self.cursor_timer = QTimer()
         self.cursor_timer.timeout.connect(self.update_cursor)
-        self.cursor_timer.setInterval(50)  # Update every 50ms
+        self.cursor_timer.setInterval(30)  # Faster updates for smoother animation
         
-        # Create the base cursor pixmap
+        # Store the base pixmap
         self.create_cursor_pixmap()
         
         # Rest of your initialization code...
@@ -41,7 +41,6 @@ class MainWindow(QMainWindow):
         self.cursor_pixmap = QPixmap(size, size)
         self.cursor_pixmap.fill(Qt.GlobalColor.transparent)
         
-        # Create a painter for the cursor
         painter = QPainter(self.cursor_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
@@ -54,48 +53,66 @@ class MainWindow(QMainWindow):
         
         # Draw the circular path
         rect = QRectF(4, 4, size-8, size-8)
+        # Draw a larger arc (300 degrees) to make the rotation more visible
         painter.drawArc(rect, 0, 300 * 16)  # Qt uses 16th of a degree
         painter.end()
 
     def update_cursor(self):
         """Update the rotating cursor"""
-        # Create a new pixmap for the rotated cursor
         size = 32
         rotated_pixmap = QPixmap(size, size)
         rotated_pixmap.fill(Qt.GlobalColor.transparent)
         
-        # Create a painter for the new pixmap
         painter = QPainter(rotated_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Set up the transformation
-        painter.translate(size/2, size/2)
+        # Calculate center point
+        center = size / 2
+        
+        # Set up the transformation for rotation
+        painter.translate(center, center)
         painter.rotate(self.cursor_rotation)
-        painter.translate(-size/2, -size/2)
+        painter.translate(-center, -center)
         
         # Draw the original cursor pixmap
         painter.drawPixmap(0, 0, self.cursor_pixmap)
         painter.end()
         
-        # Create and set the cursor
-        cursor = QCursor(rotated_pixmap)
-        QApplication.setOverrideCursor(cursor)
+        # Update cursor
+        while QApplication.overrideCursor():
+            QApplication.restoreOverrideCursor()
+        QApplication.setOverrideCursor(QCursor(rotated_pixmap))
         
         # Update rotation angle
-        self.cursor_rotation = (self.cursor_rotation + 30) % 360
+        self.cursor_rotation = (self.cursor_rotation + 10) % 360
+        
+        # Process events to ensure smooth animation
+        QApplication.processEvents()
 
     def start_refresh(self):
         """Start the refresh process with animated cursor"""
+        # Clear any existing override cursors
+        while QApplication.overrideCursor():
+            QApplication.restoreOverrideCursor()
+            
+        self.cursor_rotation = 0  # Reset rotation
         self.cursor_timer.start()
-        QTimer.singleShot(100, self.perform_refresh)
+        
+        # Use a QThread for the refresh operation
+        self.refresh_thread = QThread()
+        self.refresh_thread.run = self.perform_refresh
+        self.refresh_thread.finished.connect(self.on_refresh_complete)
+        self.refresh_thread.start()
 
     def perform_refresh(self):
         """Perform the actual refresh operation"""
-        try:
-            self.search_bar.clear()
-            self.db = Database("launcher.db")
-            self.load_applications()
-        finally:
-            self.cursor_timer.stop()
-            while QApplication.overrideCursor():
-                QApplication.restoreOverrideCursor()
+        self.search_bar.clear()
+        self.db = Database("launcher.db")
+        self.load_applications()
+
+    def on_refresh_complete(self):
+        """Clean up after refresh is complete"""
+        self.cursor_timer.stop()
+        while QApplication.overrideCursor():
+            QApplication.restoreOverrideCursor()
+        self.refresh_thread.deleteLater()
