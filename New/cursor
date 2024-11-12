@@ -11,7 +11,11 @@ class MainWindow(QMainWindow):
         self.cursor_rotation = 0
         self.cursor_timer = QTimer()
         self.cursor_timer.timeout.connect(self.update_cursor)
-        self.cursor_timer.setInterval(30)  # Faster updates for smoother animation
+        self.cursor_timer.setInterval(30)
+        
+        # Create worker thread
+        self.worker_thread = QThread()
+        self.worker_thread.finished.connect(self.on_refresh_complete)
         
         # Store the base pixmap
         self.create_cursor_pixmap()
@@ -44,17 +48,14 @@ class MainWindow(QMainWindow):
         painter = QPainter(self.cursor_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Define pen for the arc
         pen = QPen()
         pen.setColor(QColor("#4a90e2"))
         pen.setWidth(3)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         
-        # Draw the circular path
         rect = QRectF(4, 4, size-8, size-8)
-        # Draw a larger arc (300 degrees) to make the rotation more visible
-        painter.drawArc(rect, 0, 300 * 16)  # Qt uses 16th of a degree
+        painter.drawArc(rect, 0, 300 * 16)
         painter.end()
 
     def update_cursor(self):
@@ -66,53 +67,77 @@ class MainWindow(QMainWindow):
         painter = QPainter(rotated_pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Calculate center point
         center = size / 2
-        
-        # Set up the transformation for rotation
         painter.translate(center, center)
         painter.rotate(self.cursor_rotation)
         painter.translate(-center, -center)
         
-        # Draw the original cursor pixmap
         painter.drawPixmap(0, 0, self.cursor_pixmap)
         painter.end()
         
-        # Update cursor
-        while QApplication.overrideCursor():
-            QApplication.restoreOverrideCursor()
-        QApplication.setOverrideCursor(QCursor(rotated_pixmap))
+        # Update cursor more safely
+        cursor = QCursor(rotated_pixmap)
+        QApplication.setOverrideCursor(cursor)
         
-        # Update rotation angle
         self.cursor_rotation = (self.cursor_rotation + 10) % 360
-        
-        # Process events to ensure smooth animation
-        QApplication.processEvents()
 
     def start_refresh(self):
         """Start the refresh process with animated cursor"""
-        # Clear any existing override cursors
+        # Prevent multiple refreshes
+        if hasattr(self, 'is_refreshing') and self.is_refreshing:
+            return
+            
+        self.is_refreshing = True
+        
+        # Clear any existing cursors
         while QApplication.overrideCursor():
             QApplication.restoreOverrideCursor()
-            
-        self.cursor_rotation = 0  # Reset rotation
+        
+        self.cursor_rotation = 0
         self.cursor_timer.start()
         
-        # Use a QThread for the refresh operation
-        self.refresh_thread = QThread()
-        self.refresh_thread.run = self.perform_refresh
-        self.refresh_thread.finished.connect(self.on_refresh_complete)
-        self.refresh_thread.start()
+        # Use QTimer to perform refresh in the next event loop iteration
+        QTimer.singleShot(0, self.perform_refresh)
 
     def perform_refresh(self):
         """Perform the actual refresh operation"""
-        self.search_bar.clear()
-        self.db = Database("launcher.db")
-        self.load_applications()
+        try:
+            # Clear search bar
+            self.search_bar.clear()
+            
+            # Reconnect to database
+            self.db = Database("launcher.db")
+            
+            # Reload applications in the main thread
+            self.load_applications()
+            
+        except Exception as e:
+            print(f"Error during refresh: {e}")
+            
+        finally:
+            # Signal completion
+            self.on_refresh_complete()
 
     def on_refresh_complete(self):
         """Clean up after refresh is complete"""
+        # Stop the cursor animation
         self.cursor_timer.stop()
+        
+        # Restore normal cursor
         while QApplication.overrideCursor():
             QApplication.restoreOverrideCursor()
-        self.refresh_thread.deleteLater()
+        
+        # Reset refresh flag
+        self.is_refreshing = False
+
+    def closeEvent(self, event):
+        """Handle application closure"""
+        # Stop any ongoing refresh
+        if hasattr(self, 'is_refreshing') and self.is_refreshing:
+            self.on_refresh_complete()
+        
+        # Cleanup cursor
+        while QApplication.overrideCursor():
+            QApplication.restoreOverrideCursor()
+            
+        super().closeEvent(event)
