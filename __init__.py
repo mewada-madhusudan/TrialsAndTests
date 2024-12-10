@@ -453,3 +453,175 @@ class TableauRESTAPIProcessor:
                 p.text = f"{filter_name}: {value}"
             
             # Capture
+import os
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from pptx import Presentation
+from pptx.util import Inches
+import itertools
+import requests
+import urllib3
+from PIL import Image
+import io
+import logging
+import base64
+
+# Suppress SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+class TableauRESTAPIProcessor:
+    # ... (previous code remains the same)
+
+    def generate_ppt(self):
+        """
+        Generate PowerPoint with all filter combinations
+        """
+        # Validate filter selections
+        for filter_name, selections in self.filter_vars.items():
+            if not selections:
+                messagebox.showerror("Error", f"Please select at least one option for {filter_name}")
+                return
+        
+        # Generate filter combinations
+        combinations = list(itertools.product(
+            *[self.filter_vars[filter_name] for filter_name in self.filters.keys()]
+        ))
+        
+        # Choose save location
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".pptx",
+            filetypes=[("PowerPoint files", "*.pptx")]
+        )
+        
+        if not save_path:
+            return
+        
+        # Create PowerPoint
+        prs = Presentation()
+        
+        # Add slides for each combination
+        for i, combo in enumerate(combinations, 1):
+            # Create combination dictionary
+            combo_dict = dict(zip(self.filters.keys(), combo))
+            
+            slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank slide
+            
+            # Add text with filter combination details
+            title = slide.shapes.title
+            title.text = f"Combination {i}"
+            
+            # Add text box with filter details
+            txBox = slide.shapes.add_textbox(
+                Inches(1), Inches(2), Inches(6), Inches(2)
+            )
+            tf = txBox.text_frame
+            
+            # Add filter details to text box
+            for j, (filter_name, value) in enumerate(combo_dict.items()):
+                p = tf.add_paragraph()
+                p.text = f"{filter_name}: {value}"
+            
+            # Capture view image with applied filters
+            try:
+                image_base64 = self.capture_view_image(
+                    self.workbook_id, 
+                    self.view_id, 
+                    combo_dict
+                )
+                
+                if image_base64:
+                    # Decode base64 image
+                    image_data = base64.b64decode(image_base64)
+                    
+                    # Save temporary image
+                    with open('temp_tableau_image.png', 'wb') as f:
+                        f.write(image_data)
+                    
+                    # Add image to slide
+                    slide.shapes.add_picture(
+                        'temp_tableau_image.png', 
+                        Inches(1), Inches(4), 
+                        width=Inches(6)
+                    )
+                    
+                    # Remove temporary image
+                    os.remove('temp_tableau_image.png')
+            
+            except Exception as e:
+                self.logger.error(f"Error adding image to slide: {e}")
+                messagebox.showwarning("Image Capture", f"Could not capture image for combination {i}")
+        
+        # Save PowerPoint
+        prs.save(save_path)
+        messagebox.showinfo("Success", f"PowerPoint generated with {len(combinations)} slides")
+
+
+def main():
+    """
+    Main entry point for the Tableau Dashboard Filter Processor
+    """
+    # Create login window
+    login_window = tk.Tk()
+    login_window.title("Tableau Dashboard Processor")
+    login_window.geometry("400x400")
+
+    # Server URL Label and Entry
+    tk.Label(login_window, text="Tableau Server URL:").pack(pady=(10,0))
+    server_url_entry = tk.Entry(login_window, width=50)
+    server_url_entry.pack(pady=5)
+    server_url_entry.insert(0, "https://your-tableau-server.com")
+
+    # Site ID Label and Entry
+    tk.Label(login_window, text="Site ID:").pack(pady=(10,0))
+    site_id_entry = tk.Entry(login_window, width=50)
+    site_id_entry.pack(pady=5)
+
+    # Username Label and Entry
+    tk.Label(login_window, text="Username:").pack(pady=(10,0))
+    username_entry = tk.Entry(login_window, width=50)
+    username_entry.pack(pady=5)
+
+    # Password Label and Entry
+    tk.Label(login_window, text="Password:").pack(pady=(10,0))
+    password_entry = tk.Entry(login_window, show="*", width=50)
+    password_entry.pack(pady=5)
+
+    def start_processing():
+        """
+        Initialize the Tableau REST API Processor and start the workflow
+        """
+        # Validate inputs
+        if not all([
+            server_url_entry.get(), 
+            site_id_entry.get(), 
+            username_entry.get(), 
+            password_entry.get()
+        ]):
+            messagebox.showerror("Error", "Please fill in all fields")
+            return
+
+        # Create processor instance
+        processor = TableauRESTAPIProcessor(
+            server_url_entry.get(),
+            site_id_entry.get(),
+            username_entry.get(),
+            password_entry.get()
+        )
+
+        # Authenticate
+        if processor.authenticate():
+            # Close login window
+            login_window.destroy()
+            
+            # Start UI for workbook and view selection
+            processor.create_ui()
+
+    # Login Button
+    login_btn = tk.Button(login_window, text="Connect", command=start_processing)
+    login_btn.pack(pady=20)
+
+    # Start the login window
+    login_window.mainloop()
+
+if __name__ == "__main__":
+    main()
