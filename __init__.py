@@ -1,738 +1,455 @@
-import openpyxl
-from openpyxl.styles import *
+import os
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from pptx import Presentation
+from pptx.util import Inches
+import itertools
+import requests
+import urllib3
+from PIL import Image
+import io
+import logging
+import base64
 
-class Excel():
-    def __init__(self, path: str):
-        self.path = path
-        self.workbook = openpyxl.load_workbook(self.path)
+# Suppress SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-    def create_file(path: str):
-        wb = openpyxl.Workbook()
-        wb.save(path)
-
-
-    def check_range(range: any):
-        if (type(range) not in (str, list)):
-            raise TypeError("Range must be a type of string or list")
-
-        elif (type(range) == str):
-            if (range.isalpha() or range.isnumeric()):
-                raise TypeError("Range string must be a combination of character and number")
-
-        elif (type(range) == list):
-            if (len(range) == 2):
-                for i in range:
-                    if type(i) not in (str, int):
-                        raise TypeError("Range list can only have a type of string and integer for its values")
-
-            else:
-                raise TypeError("Range list can only have 2 values")
+class TableauRESTAPIProcessor:
+    def __init__(self, server_url, site_id, username, password):
+        """
+        Initialize Tableau REST API connection parameters
+        
+        :param server_url: Tableau Server URL
+        :param site_id: Tableau Site ID
+        :param username: Tableau Server username
+        :param password: Tableau Server password
+        """
+        # Logging setup
+        logging.basicConfig(level=logging.INFO, 
+                            format='%(asctime)s - %(levelname)s: %(message)s')
+        self.logger = logging.getLogger(__name__)
+        
+        # Connection parameters
+        self.server_url = server_url.rstrip('/')
+        self.site_id = site_id
+        self.username = username
+        self.password = password
+        
+        # API endpoint URLs
+        self.base_url = f"{self.server_url}/api/3.21"
+        
+        # Authentication tokens
+        self.site_token = None
+        self.user_token = None
+        
+        # Workbook and filter details
+        self.workbook_id = None
+        self.view_id = None
+        self.filters = {}
+        
+        # Main application window
+        self.root = None
+        
+        # Filter selection variables
+        self.filter_vars = {}
+    
+    def authenticate(self):
+        """
+        Authenticate with Tableau REST API and get site and user tokens
+        """
+        try:
+            # Prepare authentication request
+            auth_url = f"{self.base_url}/auth/signin"
+            payload = {
+                "credentials": {
+                    "name": self.username,
+                    "password": self.password,
+                    "site": {
+                        "contentUrl": self.site_id
+                    }
+                }
+            }
+            
+            # Send authentication request
+            response = requests.post(
+                auth_url, 
+                json=payload, 
+                verify=False  # Use only in controlled environments
+            )
+            
+            # Check authentication response
+            response.raise_for_status()
+            auth_response = response.json()
+            
+            # Extract tokens
+            self.site_token = auth_response['credentials']['token']
+            self.user_token = auth_response['credentials']['user']['id']
+            
+            self.logger.info("Successfully authenticated with Tableau Server")
+            return True
+        
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Authentication failed: {e}")
+            messagebox.showerror("Authentication Error", str(e))
+            return False
+    
+    def get_workbooks(self):
+        """
+        Retrieve list of workbooks for the authenticated user
+        """
+        try:
+            # Prepare headers
+            headers = {
+                'X-Tableau-Auth': self.site_token
+            }
+            
+            # Get workbooks endpoint
+            workbooks_url = f"{self.base_url}/sites/{self.site_id}/workbooks"
+            
+            # Send request
+            response = requests.get(
+                workbooks_url, 
+                headers=headers, 
+                verify=False
+            )
+            
+            response.raise_for_status()
+            workbooks = response.json()
+            
+            return workbooks['workbooks']['workbook']
+        
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to retrieve workbooks: {e}")
+            messagebox.showerror("Workbook Retrieval Error", str(e))
+            return []
+    
+    def get_workbook_details(self, workbook_id):
+        """
+        Get details of a specific workbook
+        
+        :param workbook_id: ID of the workbook
+        :return: Workbook details
+        """
+        try:
+            # Prepare headers
+            headers = {
+                'X-Tableau-Auth': self.site_token
+            }
+            
+            # Get workbook details endpoint
+            workbook_url = f"{self.base_url}/sites/{self.site_id}/workbooks/{workbook_id}"
+            
+            # Send request
+            response = requests.get(
+                workbook_url, 
+                headers=headers, 
+                verify=False
+            )
+            
+            response.raise_for_status()
+            return response.json()
+        
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to retrieve workbook details: {e}")
+            messagebox.showerror("Workbook Details Error", str(e))
+            return None
+    
+    def get_workbook_filters(self, workbook_id, view_id):
+        """
+        Retrieve filters for a specific workbook view
+        
+        :param workbook_id: ID of the workbook
+        :param view_id: ID of the view
+        :return: Dictionary of filters
+        """
+        try:
+            # Prepare headers
+            headers = {
+                'X-Tableau-Auth': self.site_token
+            }
+            
+            # Get filters endpoint
+            filters_url = (f"{self.base_url}/sites/{self.site_id}/workbooks/"
+                           f"{workbook_id}/views/{view_id}/filters")
+            
+            # Send request
+            response = requests.get(
+                filters_url, 
+                headers=headers, 
+                verify=False
+            )
+            
+            response.raise_for_status()
+            filter_data = response.json()
+            
+            # Process filters
+            filters = {}
+            for filter_item in filter_data.get('filters', {}).get('filter', []):
+                # Extract filter name and available values
+                filter_name = filter_item.get('name', 'Unknown')
                 
-
-    def convert_range(range: any):
-        Excel.check_range(range)
-
-        if (type(range) == str):
-            column = Excel.check_and_convert_string_value(''.join(x for x in range if not x.isdigit()))
-            row = int(''.join(x for x in range if x.isdigit()))
-
-        elif (type(range) == list):
-            if (type(range[0]) == str):
-                column = Excel.check_and_convert_string_value(range[0])
-            
-            elif (type(range[0]) == int):
-                column = range[0]
-
-            if (type(range[1]) == str):
-                row = Excel.check_and_convert_string_value(range[1])
-            
-            elif (type(range[1]) == int):
-                row = range[1]
-
-        return column, row
-
-
-    def check_and_convert_string_value(value: any):
-        if(type(value) == str):
-            value = [ord(x) - 96 for x in value.lower()]
-
-            new_value = 0
-            for i in range(len(value)):
-                new_value += value[i] * 26**(len(value) - (i + 1))
-
-        return new_value
-
-    
-    def attributes_string(list_of_attributes: any):
-        attributes_string = ""
-        for i, attribute in enumerate(list_of_attributes):
-            if(i == 0):
-                attributes_string += attribute
-            
-            else:
-                attributes_string += f", {attribute}"
-
-        return attributes_string
-
-
-    #region Get
-    def get_value_singular(self, range: any):
-        column, row = Excel.convert_range(range)
-        value = self.workbook.active.cell(row = row, column = column).value
-
-        return value
-
-        
-    def get_value_multiple(self, start_range: any, end_range: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-        
-        value = []
-        for row in range(start_row, end_row + 1):
-            for column in range(start_column, end_column + 1):
-                temp_value = self.workbook.active.cell(row = row, column = column).value
-                value.append(temp_value)
-
-        return value
-
-
-    def get_value_multiple_2d(self, start_range: any, end_range: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-
-        value_array = []
-        for row in range(start_row, end_row + 1):
-            temp_value_array = []
-            for column in range(start_column, end_column + 1):
-                temp_value = self.workbook.active.cell(row = row, column = column).value
-                temp_value_array.append(temp_value)
-            
-            value_array.append(temp_value_array)
-
-        return value_array
-
-    #endregion Get
-
-
-    #region Write
-    def write_value_singular(self, range: any, value: any):
-        if(type(value) == list):
-            raise TypeError("Use write_value_multiple function if the value type is a list")
-
-        column, row = Excel.convert_range(range)
-            
-        self.workbook.active.cell(row = row, column = column, value = value)
-        self.workbook.save(self.path)
-
-
-    def write_value_multiple(self, start_range: any, end_range: any, value: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-        
-        if(type(value) == list):
-            for check_value in value:
-                if(type(check_value) == list):
-                    raise TypeError("Use write_value_multiple_2d function if the value is a 2D list")
-
-            value_counter = 0
-            for row in range(start_row, end_row + 1):
-                for column in range(start_column, end_column + 1):
-                    self.workbook.active.cell(row = row, column = column, value = value[value_counter])
-                    value_counter += 1
-
-        elif(type(value) in (str, int, bool, float)):
-            for row in range(start_row, end_row + 1):
-                for column in range(start_column, end_column + 1):
-                    self.workbook.active.cell(row = row, column = column, value = value)       
-
-        self.workbook.save(self.path)
-
-
-    def write_value_multiple_2d(self, start_range: any, value: any):
-        if(type(value) == list):
-            value_is_valid = True
-            for check_value in value:
-                if(type(check_value) != list):
-                    value_is_valid = False
-
-            if(value_is_valid):
-                start_column, start_row = Excel.convert_range(start_range)
-                end_column, end_row = start_column + len(value[0]), start_row + len(value)
-
-                for x, row in enumerate(range(start_row, end_row)):
-                    for y, column in enumerate(range(start_column, end_column)):
-                        self.workbook.active.cell(row = row, column = column, value = value[x][y])
-
-                self.workbook.save(self.path)
-
-            elif(not value_is_valid):
-                raise TypeError("Value must be a 2D list")
-        
-        else:
-            raise TypeError("Value must be a 2D list")
-
-    #endregion Write
-
-
-    #region Merge & Unmerge
-    def merge(self, start_range: any, end_range: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-
-        self.workbook.active.merge_cells(start_row = start_row, start_column = start_column, end_row = end_row, end_column = end_column)
-        self.workbook.save(self.path)
-
-    
-    def unmerge(self, start_range: any, end_range: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-
-        self.workbook.active.unmerge_cells(start_row = start_row, start_column = start_column, end_row = end_row, end_column = end_column)
-        self.workbook.save(self.path)
-    
-    #endregion Merge & Unmerge
-
-
-    #region Font
-    def font_attributes(**attributes: any):
-        list_of_attributes = []
-        if("font" in attributes):
-            if(type(attributes.get("font")) == str):
-                font_name = attributes.get("font")
-                temp_attribute = f"name='{font_name}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Font data type needs to be a string")
-
-        if("size" in attributes):
-            if(type(attributes.get("size")) in (str, int)):
-                font_size = int(attributes.get("size"))
-                temp_attribute = f"size={font_size}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Size data type needs to be a string or an integer")
-
-        if("color" in attributes):
-            if(type(attributes.get("color")) == str):
-                color_name = attributes.get("color")
-                temp_attribute = f"color='{color_name}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Color data type needs to be a string")
-
-        if("underline" in attributes):
-            if(type(attributes.get("underline")) == str):
-                underline_name = attributes.get("underline")
-                underline_name = (underline_name[0].lower() + underline_name[1:]).replace(" ", "")
-                temp_attribute = f"underline='{underline_name}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Underline data type needs to be a string")
-
-        if("bold" in attributes):
-            if(type(attributes.get("bold")) == bool):
-                is_bold = attributes.get("bold")
-                temp_attribute = f"bold={is_bold}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Bold data type needs to be a boolean")
-
-        if("italic" in attributes):
-            if(type(attributes.get("italic")) == bool):
-                is_italic = attributes.get("italic")
-                temp_attribute = f"italic={is_italic}"
-
-                list_of_attributes.append(temp_attribute)
-            
-            else:
-                raise TypeError("Italic data type needs to be a boolean")
-
-        if("strike" in attributes):
-            if(type(attributes.get("strike")) == bool):
-                is_strike = attributes.get("strike")
-                temp_attribute = f"strike={is_strike}"
-
-                list_of_attributes.append(temp_attribute)
-        
-            else:
-                raise TypeError("Strike data type needs to be a boolean")
-
-        return Excel.attributes_string(list_of_attributes)
-
-
-    def font_singular(self, cell_range: any, **attributes: any):
-        column, row = Excel.convert_range(cell_range)
-
-        attributes_string = Excel.font_attributes(**attributes)
-
-        self.workbook.active.cell(row = row, column = column).font = eval(f"Font({attributes_string})")
-        self.workbook.save(self.path)
-
-    
-    def font_multiple(self, start_range: any, end_range: any, **attributes: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-
-        attributes_string = Excel.font_attributes(**attributes)
-
-        for row in range(start_row, end_row + 1):
-            for column in range(start_column, end_column + 1):
-                self.workbook.active.cell(row = row, column = column).font = eval(f"Font({attributes_string})")
-
-        self.workbook.save(self.path)
-    
-    #endregion Font
-
-
-    #region Fill
-    def fill_attributes(**attributes: str):
-        list_of_attributes = []
-
-        if("type" in attributes):
-            if(type(attributes.get("type")) == str):
-                fill_type = attributes.get("type")
-                fill_type = (fill_type[0].lower() + fill_type[1:]).replace(' ', '')
-                temp_attribute = f"fill_type='{fill_type}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            elif(attributes.get("type") == None):
-                temp_attribute = f"fill_type=None"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Type data type needs to be a string or None")
-
-        if("main_color" in attributes):
-            if(type(attributes.get("main_color")) == str):
-                fill_color = attributes.get("main_color")
-
-                temp_attribute = f"start_color='{fill_color}'"
+                # Get filter values (this might need adjustment based on Tableau's response)
+                filter_values = self._get_filter_values(
+                    workbook_id, view_id, filter_name
+                )
                 
-                list_of_attributes.append(temp_attribute)
-
-        if("second_color" in attributes):
-            if(type(attributes.get("second_color")) == str):
-                fill_color = attributes.get("second_color")
-                
-                temp_attribute = f"end_color='{fill_color}'"
-                    
-                list_of_attributes.append(temp_attribute)
-
-        return Excel.attributes_string(list_of_attributes)
-
-
-    def shade_attributes(**attributes: str):
-        list_of_attributes = []
-
-        if("shade" in attributes):
-            if(type(attributes.get("shade")) != bool):
-                raise TypeError("Shade data type needs to be a boolean")
-
-        if("type" in attributes):
-            if(type(attributes.get("type")) == str):
-                fill_type = attributes.get("type")
-                fill_type = (fill_type[0].lower() + fill_type[1:]).replace(' ', '')
-                temp_attribute = f"fill_type='{fill_type}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            elif(attributes.get("type") == None):
-                temp_attribute = f"fill_type=None"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Type data type needs to be a string or None")
-
-        if("main_color" in attributes):
-            if(type(attributes.get("main_color")) == str):
-                fill_color = attributes.get("main_color")
-                temp_attribute = f"end_color='{fill_color}'"
-                
-                list_of_attributes.append(temp_attribute)
-
-        if("second_color" in attributes):
-            if(type(attributes.get("second_color")) == str):
-                fill_color = attributes.get("second_color")
-                temp_attribute = f"start_color='{fill_color}'"
-                    
-                list_of_attributes.append(temp_attribute)
-
-        return Excel.attributes_string(list_of_attributes)
-
-
-    def fill_singular(self, cell_range: any, **attributes: any):
-        column, row = Excel.convert_range(cell_range)
+                filters[filter_name] = filter_values
             
-        attributes_string = Excel.fill_attributes(**attributes)
-
-        self.workbook.active.cell(row = row, column = column).fill = eval(f"PatternFill({attributes_string})")
-        self.workbook.save(self.path)
-
-    
-    def fill_multiple(self, start_range: any, end_range: any, **attributes: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-            
-        main_attributes_string = Excel.fill_attributes(**attributes)
-
-        shade = False
-        if("shade" in attributes):
-            shade = attributes.get("shade")
-
-        if(shade):    
-            second_attributes_string = Excel.shade_attributes(**attributes)
-
-        for row in range(start_row, end_row + 1):
-            for column in range(start_column, end_column + 1):
-                self.workbook.active.cell(row = row, column = column).fill = eval(f"PatternFill({main_attributes_string})")
-
-                if(shade and column % 2 == 0):
-                    self.workbook.active.cell(row = row, column = column).fill = eval(f"PatternFill({second_attributes_string})")
-                
-        self.workbook.save(self.path)
-    
-    #endregion Fill
-
-
-    #region Border
-    def border_attributes(**attributes: any):
-        list_of_attributes = []
-        if("style" in attributes):
-            if(type(attributes.get("style")) == str):
-                if(attributes.get("style").lower() == "none"):
-                    temp_attribute = f"border_style=None"
-
-                else:
-                    border_style = attributes.get("style").replace(" ", "")
-                    border_style = border_style[0].lower() + border_style[1:]
-                    temp_attribute = f"border_style='{border_style}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Style data type needs to be a string")
-
-        if("color" in attributes):
-            if(type(attributes.get("color")) == str):
-                border_color = attributes.get("color")
-                temp_attribute = f"color='{border_color}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Color data type needs to be a string")
-
-        return Excel.attributes_string(list_of_attributes)
-
-    
-    def set_border(self, row, column, side, border):
-        if(type(side) == str):
-            side = side.lower()
+            return filters
         
-        else:
-            raise TypeError("Side data type needs to be a string")
-
-        if(side == "all"):
-            self.workbook.active.cell(row = row, column = column).border = Border(top = border, left = border, right = border, bottom = border)
-
-        elif(side == "top"):
-            self.workbook.active.cell(row = row, column = column).border = Border(top = border)
-
-        elif(side == "left"):
-            self.workbook.active.cell(row = row, column = column).border = Border(left = border)
-
-        elif(side == "right"):
-            self.workbook.active.cell(row = row, column = column).border = Border(right = border)
-
-        elif(side == "bottom"):
-            self.workbook.active.cell(row = row, column = column).border = Border(bottom = border)
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to retrieve filters: {e}")
+            messagebox.showerror("Filter Retrieval Error", str(e))
+            return {}
+    
+    def _get_filter_values(self, workbook_id, view_id, filter_name):
+        """
+        Get available values for a specific filter
         
-        else:
-            raise TypeError("Side value can only be all, top, left, right, bottom")
-
-        self.workbook.save(self.path)
-
-
-    def border_singular(self, cell_range: any, side: str, **attributes: any):
-        column, row = Excel.convert_range(cell_range)
+        :param workbook_id: ID of the workbook
+        :param view_id: ID of the view
+        :param filter_name: Name of the filter
+        :return: List of filter values
+        """
+        try:
+            # Prepare headers
+            headers = {
+                'X-Tableau-Auth': self.site_token
+            }
             
-        attributes_string = Excel.border_attributes(**attributes)
+            # Get filter values endpoint
+            values_url = (f"{self.base_url}/sites/{self.site_id}/workbooks/"
+                          f"{workbook_id}/views/{view_id}/filters/{filter_name}/values")
+            
+            # Send request
+            response = requests.get(
+                values_url, 
+                headers=headers, 
+                verify=False
+            )
+            
+            response.raise_for_status()
+            values_data = response.json()
+            
+            # Extract and return filter values
+            return [
+                value.get('value', '') 
+                for value in values_data.get('filterValues', {}).get('filterValue', [])
+            ]
         
-        border = eval(f"Side({attributes_string})")
-        self.set_border(row, column, side, border)
-
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to retrieve filter values: {e}")
+            return []
     
-    def border_multiple(self, start_range: any, end_range: any, side: str, **attributes: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-            
-        attributes_string = Excel.border_attributes(**attributes)
+    def capture_view_image(self, workbook_id, view_id, filter_combination):
+        """
+        Capture image of the view with applied filters
         
-        border = eval(f"Side({attributes_string})")
-        for row in range(start_row, end_row + 1):
-            for column in range(start_column, end_column + 1):
-                self.set_border(row, column, side, border)
-    
-    #endregion
-
-
-    #region Alignment
-    def alignment_attributes(**attributes: any):
-        list_of_attributes = []
-        if("horizontal" in attributes):
-            if(type(attributes.get("horizontal")) == str):
-                horizontal_type = attributes.get("horizontal")
-                horizontal_type = (horizontal_type[0].lower() + horizontal_type[1:]).replace(' ', '')
-                temp_attribute = f"horizontal='{horizontal_type}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Horizontal data type needs to be a string")
-
-        if("vertical" in attributes):
-            if(type(attributes.get("vertical")) == str):
-                vertical_type = attributes.get("vertical")
-                vertical_type = (vertical_type[0].lower() + vertical_type[1:]).replace(' ', '')
-                temp_attribute = f"vertical='{vertical_type}'"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Vertical data type needs to be a string")
-
-        if("rotation" in attributes):
-            if(type(attributes.get("rotation")) in (str, int)):
-                rotate_degree = int(attributes.get("rotation"))
-                temp_attribute = f"text_rotation={rotate_degree}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Rotation data type needs to be a string or an integer")
-
-        if("indent" in attributes):
-            if(type(attributes.get("indent")) in (str, int)):
-                indent_value = int(attributes.get("indent"))
-                temp_attribute = f"indent={indent_value}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Indent data type needs to be a string or an integer")
-
-        if("wrap" in attributes):
-            if(type(attributes.get("wrap")) == bool):
-                is_wrap = attributes.get("wrap")
-                temp_attribute = f"wrap_text={is_wrap}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Wrap data type needs to be a boolean")
-
-        if("shrink" in attributes):
-            if(type(attributes.get("shrink")) == bool):
-                is_shrink = attributes.get("shrink")
-                temp_attribute = f"shrink_to_fit={is_shrink}"
-
-                list_of_attributes.append(temp_attribute)
-
-            else:
-                raise TypeError("Shrink data type needs to be a boolean")
-
-        return Excel.attributes_string(list_of_attributes)
-    
-
-    def alignment_singular(self, cell_range: any, **attributes: any):
-        column, row = Excel.convert_range(cell_range)
-
-        attributes_string = Excel.alignment_attributes(**attributes)
+        :param workbook_id: ID of the workbook
+        :param view_id: ID of the view
+        :param filter_combination: Dictionary of filter values to apply
+        :return: Base64 encoded image
+        """
+        try:
+            # Prepare headers
+            headers = {
+                'X-Tableau-Auth': self.site_token
+            }
+            
+            # Prepare filter parameters
+            filter_params = []
+            for filter_name, filter_value in filter_combination.items():
+                filter_params.append(
+                    f"filter_{filter_name}={urllib3.quote(str(filter_value))}"
+                )
+            
+            # Construct image download URL
+            image_url = (f"{self.server_url}/api/3.21/sites/{self.site_id}/workbooks/"
+                         f"{workbook_id}/views/{view_id}/image?")
+            
+            # Add filter parameters if any
+            if filter_params:
+                image_url += '&'.join(filter_params)
+            
+            # Send request to get image
+            response = requests.get(
+                image_url, 
+                headers=headers, 
+                verify=False
+            )
+            
+            response.raise_for_status()
+            
+            # Return base64 encoded image
+            return base64.b64encode(response.content).decode('utf-8')
         
-        self.workbook.active.cell(row = row, column = column).alignment = eval(f"Alignment({attributes_string})")
-        self.workbook.save(self.path)
-
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Failed to capture view image: {e}")
+            return None
     
-    def alignment_multiple(self, start_range: any, end_range: any, **attributes: any):
-        start_column, start_row = Excel.convert_range(start_range)
-        end_column, end_row = Excel.convert_range(end_range)
-
-        attributes_string = Excel.alignment_attributes(**attributes)
-
-        for row in range(start_row, end_row + 1):
-            for column in range(start_column, end_column + 1):
-                self.workbook.active.cell(row = row, column = column).alignment = eval(f"Alignment({attributes_string})")
-                
-        self.workbook.save(self.path)
-    
-    #endregion
-
-
-    #region Function
-    def summary(self, start_range:any, end_range:any):
-        array_of_value = self.get_value_multiple(start_range, end_range)
-
-        sum_value = 0
-        for value in array_of_value:
-            if (type(value) == int):
-                sum_value += value
-
-            elif (type(value) == str):
-                if(value.isnumeric()):
-                    sum_value += int(value)
-
-        return sum_value
-
-
-    def count(self, start_range:any, end_range:any):
-        value_array = self.get_value_multiple(start_range, end_range)
+    def create_ui(self):
+        """
+        Create user interface for workbook and view selection
+        """
+        # Create main window
+        self.root = tk.Tk()
+        self.root.title("Tableau Dashboard Filter Processor")
+        self.root.geometry("600x500")
         
-        value = 0
-        for i in value_array:
-            if(type(i) in (int, float)):
-                value += 1
-
-        return value
-
-
-    def count_a(self, start_range:any, end_range:any):
-        value_array = self.get_value_multiple(start_range, end_range)
-
-        value = 0
-        for i in value_array:
-            if(type(i) in (str, int, float, bool)):
-                value += 1
-
-        return value
-
-
-    def count_blank(self, start_range:any, end_range:any):
-        value_array = self.get_value_multiple(start_range, end_range)
-
-        value = 0
-        for i in value_array:
-            if(type(i) not in (str, int, float, bool)):
-                value += 1
-
-        return value
-
-
-    def average(self, start_range:any, end_range:any):
-        total = self.summary(start_range, end_range)
-        count = self.count(start_range, end_range)
-
-        value = total / count
-
-        return value
-
-
-    def excel_if(self, range1: any, logic: str, range2: any, return1: any, return2: any): 
-        value1 = self.get_value_singular(range1)
-        value2 = self.get_value_singular(range2)
-
-        if(logic == "="):
-            if(value1 == value2):
-                is_true = True
-            
-            else:
-                is_true = False
-
-        elif(logic == "!="):
-            if(value1 != value2):
-                is_true = True
-            
-            else:
-                is_true = False
-
-        elif(logic == ">"):
-            if(value1 > value2):
-                is_true = True
-            
-            else:
-                is_true = False
-
-        elif(logic == "<"):
-            if(value1 < value2):
-                is_true = True
-            
-            else:
-                is_true = False
-
-        elif(logic == ">="):
-            if(value1 >= value2):
-                is_true = True
-            
-            else:
-                is_true = False
+        # Workbook selection
+        tk.Label(self.root, text="Select Workbook:").pack(pady=(10,0))
+        workbook_listbox = tk.Listbox(self.root, width=50)
+        workbook_listbox.pack(pady=5)
         
-        elif(logic == "<="):
-            if(value1 <= value2):
-                is_true = True
+        # Populate workbooks
+        workbooks = self.get_workbooks()
+        for wb in workbooks:
+            workbook_listbox.insert(tk.END, f"{wb['name']} (ID: {wb['id']})")
+        
+        # View selection
+        tk.Label(self.root, text="Select View:").pack(pady=(10,0))
+        view_listbox = tk.Listbox(self.root, width=50)
+        view_listbox.pack(pady=5)
+        
+        def on_workbook_select(event):
+            # Clear previous view selections
+            view_listbox.delete(0, tk.END)
             
-            else:
-                is_true = False
-  
-        if(is_true):
-            return return1
+            # Get selected workbook
+            selection = workbook_listbox.curselection()
+            if not selection:
+                return
+            
+            selected_wb = workbooks[selection[0]]
+            workbook_id = selected_wb['id']
+            
+            # Fetch workbook details to get views
+            wb_details = self.get_workbook_details(workbook_id)
+            
+            if wb_details and 'views' in wb_details:
+                views = wb_details['views']['view']
+                for view in views:
+                    view_listbox.insert(tk.END, f"{view['name']} (ID: {view['id']})")
+        
+        def on_view_select(event):
+            # Get selected view
+            wb_selection = workbook_listbox.curselection()
+            view_selection = view_listbox.curselection()
+            
+            if not wb_selection or not view_selection:
+                return
+            
+            selected_wb = workbooks[wb_selection[0]]
+            selected_view = selected_wb['views']['view'][view_selection[0]]
+            
+            self.workbook_id = selected_wb['id']
+            self.view_id = selected_view['id']
+            
+            # Fetch filters for the selected view
+            self.filters = self.get_workbook_filters(self.workbook_id, self.view_id)
+            
+            # Close current window and open filter selection
+            self.root.destroy()
+            self.create_filter_selection_ui()
+        
+        # Bind selection events
+        workbook_listbox.bind('<<ListboxSelect>>', on_workbook_select)
+        view_listbox.bind('<<ListboxSelect>>', on_view_select)
+        
+        self.root.mainloop()
     
-        elif(not is_true):
-            return return2
-
-
-    def summary_if(self, start_criteria_range: any, end_criteria_range: any, criteria: str, sum_start_range: any, sum_end_range: any): 
-        criteria_array = self.get_value_multiple(start_criteria_range, end_criteria_range)
-        sum_array = self.get_value_multiple(sum_start_range, sum_end_range)
-
-        if(len(criteria_array) == len(sum_array)):
-            sum_value = 0
-            for i in range(len(criteria_array)):
-                if criteria_array[i] == criteria:
-                    sum_value += sum_array[i]
-
-            return sum_value
-
-
-    def count_if(self, start_range: any, end_range: any, criteria: str): 
-        value_array = self.get_value_multiple(start_range, end_range)
-
-        value = 0
-        for i in value_array:
-                if(i == criteria):
-                    value += 1
-
-        return value
-
+    def create_filter_selection_ui(self):
+        """
+        Create UI for selecting filter combinations
+        """
+        self.root = tk.Tk()
+        self.root.title("Tableau Filter Selection")
+        self.root.geometry("600x500")
+        
+        # Filter selection frames
+        for filter_name, options in self.filters.items():
+            frame = ttk.LabelFrame(self.root, text=filter_name)
+            frame.pack(padx=10, pady=10, fill='x')
+            
+            # Multiselect listbox
+            self.filter_vars[filter_name] = []
+            listbox = tk.Listbox(frame, selectmode=tk.MULTIPLE, height=5)
+            for option in options:
+                listbox.insert(tk.END, option)
+            listbox.pack(padx=10, pady=10, fill='x')
+            
+            # Bind selection
+            listbox.bind('<<ListboxSelect>>', 
+                         lambda e, name=filter_name: self.update_filter_selection(e, name))
+        
+        # Generate button
+        generate_btn = ttk.Button(self.root, text="Generate PowerPoint", command=self.generate_ppt)
+        generate_btn.pack(pady=20)
+        
+        self.root.mainloop()
     
-    def average_if(self, start_criteria_range: any, end_criteria_range: any, criteria: str, sum_start_range: any, sum_end_range: any):
-        total_value = self.summary_if(start_criteria_range, end_criteria_range, criteria, sum_start_range, sum_end_range)
-        count_value = self.count_if(start_criteria_range, end_criteria_range, criteria)
-
-        return total_value / count_value
-
-
-    def excel_max(self, start_range: any, end_range: any):
-        max_value = max(self.get_value_multiple(start_range, end_range))
-
-        return max_value
-
-
-    def excel_min(self, start_range: any, end_range: any):
-        min_value = min(self.get_value_multiple(start_range, end_range))
-
-        return min_value
-
-    #endregion
+    def update_filter_selection(self, event, filter_name):
+        """
+        Update selected filter options
+        
+        :param event: Tkinter event
+        :param filter_name: Name of the filter
+        """
+        listbox = event.widget
+        selected_indices = listbox.curselection()
+        
+        # Update filter selections
+        self.filter_vars[filter_name] = [
+            listbox.get(idx) for idx in selected_indices
+        ]
+    
+    def generate_ppt(self):
+        """
+        Generate PowerPoint with all filter combinations
+        """
+        # Validate filter selections
+        for filter_name, selections in self.filter_vars.items():
+            if not selections:
+                messagebox.showerror("Error", f"Please select at least one option for {filter_name}")
+                return
+        
+        # Generate filter combinations
+        combinations = list(itertools.product(
+            *[self.filter_vars[filter_name] for filter_name in self.filters.keys()]
+        ))
+        
+        # Choose save location
+        save_path = filedialog.asksaveasfilename(
+            defaultextension=".pptx",
+            filetypes=[("PowerPoint files", "*.pptx")]
+        )
+        
+        if not save_path:
+            return
+        
+        # Create PowerPoint
+        prs = Presentation()
+        
+        # Add slides for each combination
+        for i, combo in enumerate(combinations, 1):
+            # Create combination dictionary
+            combo_dict = dict(zip(self.filters.keys(), combo))
+            
+            slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank slide
+            
+            # Add text with filter combination details
+            title = slide.shapes.title
+            title.text = f"Combination {i}"
+            
+            # Add text box with filter details
+            txBox = slide.shapes.add_textbox(
+                Inches(1), Inches(2), Inches(6), Inches(2)
+            )
+            tf = txBox.text_frame
+            
+            # Add filter details to text box
+            for j, (filter_name, value) in enumerate(combo_dict.items()):
+                p = tf.add_paragraph()
+                p.text = f"{filter_name}: {value}"
+            
+            # Capture
