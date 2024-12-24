@@ -1,0 +1,203 @@
+using ClosedXML.Excel;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+public class FormulaAnalyzer
+{
+    public class FormulaInfo
+    {
+        public string Sheet { get; set; }
+        public string CellReference { get; set; }
+        public string Formula { get; set; }
+        public string Pattern { get; set; }
+        public string Classification { get; set; }
+        public bool IsInPivotSheet { get; set; }
+    }
+
+    public class AnalysisResult
+    {
+        public List<FormulaInfo> SingleCellFormulas { get; set; } = new();
+        public List<FormulaInfo> RowwiseDraggedFormulas { get; set; } = new();
+        public List<FormulaInfo> ColumnwiseDraggedFormulas { get; set; } = new();
+
+        public int TotalPivotSheetFormulas => 
+            SingleCellFormulas.Count(f => f.IsInPivotSheet) +
+            RowwiseDraggedFormulas.Count(f => f.IsInPivotSheet) +
+            ColumnwiseDraggedFormulas.Count(f => f.IsInPivotSheet);
+
+        public int TotalNonPivotSheetFormulas =>
+            SingleCellFormulas.Count(f => !f.IsInPivotSheet) +
+            RowwiseDraggedFormulas.Count(f => !f.IsInPivotSheet) +
+            ColumnwiseDraggedFormulas.Count(f => !f.IsInPivotSheet);
+    }
+
+    public AnalysisResult AnalyzeExcelFormulas(string filePath)
+    {
+        var result = new AnalysisResult();
+
+        using (var workbook = new XLWorkbook(filePath))
+        {
+            foreach (var worksheet in workbook.Worksheets)
+            {
+                var hasPivotTables = worksheet.PivotTables.Any();
+                var usedRange = worksheet.RangeUsed();
+                if (usedRange == null) continue;
+
+                // Get all cells with formulas, excluding cells that are part of pivot table calculations
+                var formulaCells = usedRange.Cells()
+                    .Where(cell => cell.HasFormula && !IsPivotCalculationCell(cell))
+                    .ToList();
+
+                foreach (var cell in formulaCells)
+                {
+                    var formula = cell.FormulaA1;
+                    var pattern = ExtractFormulaPattern(formula);
+                    var classification = ClassifyFormula(worksheet, cell, pattern);
+
+                    var formulaInfo = new FormulaInfo
+                    {
+                        Sheet = worksheet.Name,
+                        CellReference = cell.Address.ToString(),
+                        Formula = formula,
+                        Pattern = pattern,
+                        Classification = classification,
+                        IsInPivotSheet = hasPivotTables
+                    };
+
+                    switch (classification)
+                    {
+                        case "Single":
+                            result.SingleCellFormulas.Add(formulaInfo);
+                            break;
+                        case "Rowwise":
+                            result.RowwiseDraggedFormulas.Add(formulaInfo);
+                            break;
+                        case "Columnwise":
+                            result.ColumnwiseDraggedFormulas.Add(formulaInfo);
+                            break;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private bool IsPivotCalculationCell(IXLCell cell)
+    {
+        try
+        {
+            // Check if cell is part of pivot table calculations
+            // This is a basic check - you might need to enhance it based on your specific needs
+            var formula = cell.FormulaA1;
+            return formula.Contains("GETPIVOTDATA(") ||
+                   formula.Contains("CUBEVALUE(") ||
+                   formula.StartsWith("='-") || // Common pattern in pivot calculations
+                   cell.Style.Fill.BackgroundColor == XLColor.FromTheme(XLThemeColor.Accent1); // Often used in pivot tables
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Previous methods remain the same: ExtractFormulaPattern, ClassifyFormula, etc.
+
+    // Updated export method to include pivot sheet information
+    public void ExportResults(AnalysisResult results, string outputPath)
+    {
+        using (var workbook = new XLWorkbook())
+        {
+            // Create summary sheet
+            var summarySheet = workbook.Worksheets.Add("Summary");
+            AddSummaryInformation(summarySheet, results);
+
+            // Create detailed sheets with pivot indication
+            CreateResultSheet(workbook, "SingleCellFormulas", results.SingleCellFormulas);
+            CreateResultSheet(workbook, "RowwiseDragged", results.RowwiseDraggedFormulas);
+            CreateResultSheet(workbook, "ColumnwiseDragged", results.ColumnwiseDraggedFormulas);
+
+            workbook.SaveAs(outputPath);
+        }
+    }
+
+    private void AddSummaryInformation(IXLWorksheet sheet, AnalysisResult results)
+    {
+        sheet.Cell("A1").Value = "Formula Analysis Summary";
+        sheet.Cell("A1").Style.Font.Bold = true;
+
+        sheet.Cell("A3").Value = "Category";
+        sheet.Cell("B3").Value = "In Pivot Sheets";
+        sheet.Cell("C3").Value = "In Non-Pivot Sheets";
+        sheet.Cell("D3").Value = "Total";
+
+        sheet.Range("A3:D3").Style.Fill.BackgroundColor = XLColor.LightGray;
+        sheet.Range("A3:D3").Style.Font.Bold = true;
+
+        // Single Cell Formulas
+        sheet.Cell("A4").Value = "Single Cell Formulas";
+        sheet.Cell("B4").Value = results.SingleCellFormulas.Count(f => f.IsInPivotSheet);
+        sheet.Cell("C4").Value = results.SingleCellFormulas.Count(f => !f.IsInPivotSheet);
+        sheet.Cell("D4").FormulaA1 = "=SUM(B4:C4)";
+
+        // Rowwise Dragged Formulas
+        sheet.Cell("A5").Value = "Rowwise Dragged Formulas";
+        sheet.Cell("B5").Value = results.RowwiseDraggedFormulas.Count(f => f.IsInPivotSheet);
+        sheet.Cell("C5").Value = results.RowwiseDraggedFormulas.Count(f => !f.IsInPivotSheet);
+        sheet.Cell("D5").FormulaA1 = "=SUM(B5:C5)";
+
+        // Columnwise Dragged Formulas
+        sheet.Cell("A6").Value = "Columnwise Dragged Formulas";
+        sheet.Cell("B6").Value = results.ColumnwiseDraggedFormulas.Count(f => f.IsInPivotSheet);
+        sheet.Cell("C6").Value = results.ColumnwiseDraggedFormulas.Count(f => !f.IsInPivotSheet);
+        sheet.Cell("D6").FormulaA1 = "=SUM(B6:C6)";
+
+        // Totals
+        sheet.Cell("A7").Value = "Total";
+        sheet.Cell("B7").FormulaA1 = "=SUM(B4:B6)";
+        sheet.Cell("C7").FormulaA1 = "=SUM(C4:C6)";
+        sheet.Cell("D7").FormulaA1 = "=SUM(D4:D6)";
+        sheet.Range("A7:D7").Style.Font.Bold = true;
+
+        sheet.Columns().AdjustToContents();
+    }
+
+    private void CreateResultSheet(XLWorkbook workbook, string sheetName, List<FormulaInfo> formulas)
+    {
+        var worksheet = workbook.Worksheets.Add(sheetName);
+        
+        // Add headers
+        worksheet.Cell("A1").Value = "Sheet";
+        worksheet.Cell("B1").Value = "Cell Reference";
+        worksheet.Cell("C1").Value = "Formula";
+        worksheet.Cell("D1").Value = "Pattern";
+        worksheet.Cell("E1").Value = "In Pivot Sheet";
+        
+        // Style headers
+        var headerRow = worksheet.Row(1);
+        headerRow.Style.Font.Bold = true;
+        headerRow.Style.Fill.BackgroundColor = XLColor.LightGray;
+
+        // Add data
+        for (int i = 0; i < formulas.Count; i++)
+        {
+            var row = i + 2;
+            var formula = formulas[i];
+            worksheet.Cell(row, 1).Value = formula.Sheet;
+            worksheet.Cell(row, 2).Value = formula.CellReference;
+            worksheet.Cell(row, 3).Value = formula.Formula;
+            worksheet.Cell(row, 4).Value = formula.Pattern;
+            worksheet.Cell(row, 5).Value = formula.IsInPivotSheet;
+
+            // Highlight rows in pivot sheets
+            if (formula.IsInPivotSheet)
+            {
+                worksheet.Row(row).Style.Fill.BackgroundColor = XLColor.LightCyan;
+            }
+        }
+
+        // Autofit columns
+        worksheet.Columns().AdjustToContents();
+    }
+}
