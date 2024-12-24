@@ -1,109 +1,151 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QVBoxLayout
-from PyQt5.QtCore import QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor
+public class FormulaAnalyzer
+{
+    private readonly IProgress<string> _progress;
+    private int _totalProcessedCells;
+    private DateTime _startTime;
 
-class NeonButtonDemo(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
+    public FormulaAnalyzer(IProgress<string> progress = null)
+    {
+        _progress = progress ?? new Progress<string>(msg => Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}: {msg}"));
+        _totalProcessedCells = 0;
+    }
 
-    def initUI(self):
-        # Set up the main window
-        self.setWindowTitle('Neon Button Effect')
-        self.setGeometry(100, 100, 400, 300)
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #121212;
+    public async Task<AnalysisResult> AnalyzeExcelFormulasAsync(string filePath)
+    {
+        _startTime = DateTime.Now;
+        _progress.Report($"Starting analysis of {filePath}");
+        var result = new AnalysisResult();
+        
+        try
+        {
+            _progress.Report("Loading workbook...");
+            using var workbook = new XLWorkbook(filePath, new LoadOptions { LoadDataOnly = true });
+            _progress.Report($"Loaded workbook with {workbook.Worksheets.Count} worksheets");
+
+            foreach (var worksheet in workbook.Worksheets)
+            {
+                await ProcessWorksheet(worksheet, result);
             }
-        """)
 
-        # Create layout
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        # Create neon buttons with different colors
-        colors = [
-            ('#00ff00', 'Green Neon'),
-            ('#ff00ff', 'Pink Neon'),
-            ('#00ffff', 'Cyan Neon')
-        ]
-
-        for color, name in colors:
-            button = self.create_neon_button(color, name)
-            layout.addWidget(button)
-
-    def create_neon_button(self, color, text):
-        button = QPushButton(text)
-        
-        # Base neon button stylesheet
-        button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: rgba(0, 0, 0, 0);
-                color: {color};
-                border: 2px solid {color};
-                border-radius: 10px;
-                padding: 10px;
-                font-size: 16px;
-                font-weight: bold;
-                text-align: center;
-                transition: all 0.3s ease;
-            }}
+            var duration = DateTime.Now - _startTime;
+            _progress.Report($"Analysis complete. Processed {_totalProcessedCells:N0} cells in {duration.TotalMinutes:F1} minutes");
             
-            QPushButton:hover {{
-                background-color: {color};
-                color: black;
-                box-shadow: 0 0 20px {color}, 0 0 40px {color}, 0 0 60px {color};
-            }}
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _progress.Report($"ERROR: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task ProcessWorksheet(IXLWorksheet worksheet, AnalysisResult result)
+    {
+        _progress.Report($"Processing worksheet: {worksheet.Name}");
+        
+        var usedRange = worksheet.RangeUsed();
+        if (usedRange == null)
+        {
+            _progress.Report($"Worksheet {worksheet.Name} is empty");
+            return;
+        }
+
+        var firstRow = usedRange.FirstRow().RowNumber();
+        var lastRow = usedRange.LastRow().RowNumber();
+        var firstCol = usedRange.FirstColumn().ColumnNumber();
+        var lastCol = usedRange.LastColumn().ColumnNumber();
+        
+        var totalRows = lastRow - firstRow + 1;
+        var totalCells = (lastRow - firstRow + 1) * (lastCol - firstCol + 1);
+        
+        _progress.Report($"Range: {firstRow}:{firstCol} to {lastRow}:{lastCol} ({totalCells:N0} cells)");
+
+        int processedRows = 0;
+        const int batchSize = 1000;
+
+        for (int startRow = firstRow; startRow <= lastRow; startRow += batchSize)
+        {
+            var endRow = Math.Min(startRow + batchSize - 1, lastRow);
+            var batchRange = worksheet.Range(startRow, firstCol, endRow, lastCol);
             
-            QPushButton:pressed {{
-                background-color: {color};
-                color: black;
-                box-shadow: 0 0 10px {color}, 0 0 20px {color}, 0 0 30px {color};
-            }}
-        """)
-        
-        # Add hover animation
-        button.enterEvent = self.create_hover_effect(button, color)
-        button.leaveEvent = self.create_leave_effect(button, color)
-        
-        return button
+            var formulaCells = batchRange.Cells()
+                .Where(cell => cell.HasFormula)
+                .ToList();
 
-    def create_hover_effect(self, button, color):
-        def hover_event(event):
-            # Create glowing hover animation
-            self.start_glow_animation(button, color, True)
-        return hover_event
+            var cellCount = formulaCells.Count;
+            _totalProcessedCells += cellCount;
+            processedRows += endRow - startRow + 1;
 
-    def create_leave_effect(self, button, color):
-        def leave_event(event):
-            # Reset button to original state
-            self.start_glow_animation(button, color, False)
-        return leave_event
+            if (cellCount > 0)
+            {
+                _progress.Report($"Found {cellCount} formulas in rows {startRow}-{endRow}");
+                await ProcessFormulaBatch(formulaCells, worksheet, result);
+            }
 
-    def start_glow_animation(self, button, color, is_hover):
-        # Animate button glow effect
-        color_obj = QColor(color)
-        
-        # Opacity animation
-        self.opacity_anim = QPropertyAnimation(button, b"windowOpacity")
-        self.opacity_anim.setDuration(300)
-        
-        if is_hover:
-            self.opacity_anim.setStartValue(1.0)
-            self.opacity_anim.setEndValue(0.8)
-        else:
-            self.opacity_anim.setStartValue(0.8)
-            self.opacity_anim.setEndValue(1.0)
-        
-        self.opacity_anim.setEasingCurve(QEasingCurve.InOutQuad)
-        self.opacity_anim.start()
+            var percentComplete = (processedRows * 100.0) / totalRows;
+            var elapsed = DateTime.Now - _startTime;
+            var cellsPerSecond = _totalProcessedCells / elapsed.TotalSeconds;
+            
+            _progress.Report($"Progress: {percentComplete:F1}% | Speed: {cellsPerSecond:F0} cells/sec");
+            
+            // Force GC every 100k rows
+            if (processedRows % 100000 == 0)
+            {
+                _progress.Report("Running garbage collection...");
+                GC.Collect();
+            }
+        }
+    }
 
-def main():
-    app = QApplication(sys.argv)
-    demo = NeonButtonDemo()
-    demo.show()
-    sys.exit(app.exec_())
+    private async Task ProcessFormulaBatch(List<IXLCell> cells, IXLWorksheet worksheet, AnalysisResult result)
+    {
+        foreach (var cell in cells)
+        {
+            var formula = cell.FormulaA1;
+            var pattern = ExtractFormulaPattern(formula);
+            var classification = QuickClassifyFormula(worksheet, cell, pattern);
 
-if __name__ == '__main__':
-    main()
+            lock (result)
+            {
+                var info = new FormulaInfo
+                {
+                    Sheet = worksheet.Name,
+                    CellReference = cell.Address.ToString(),
+                    Formula = formula,
+                    Pattern = pattern,
+                    Classification = classification,
+                    IsInPivotSheet = worksheet.PivotTables.Any()
+                };
+
+                switch (classification)
+                {
+                    case "Single": result.SingleCellFormulas.Add(info); break;
+                    case "Rowwise": result.RowwiseDraggedFormulas.Add(info); break;
+                    case "Columnwise": result.ColumnwiseDraggedFormulas.Add(info); break;
+                }
+            }
+        }
+    }
+
+    // Other methods remain the same...
+}
+
+// Usage example
+class Program
+{
+    static async Task Main()
+    {
+        var progress = new Progress<string>(msg => Console.WriteLine(msg));
+        var analyzer = new FormulaAnalyzer(progress);
+
+        try
+        {
+            var results = await analyzer.AnalyzeExcelFormulasAsync("input.xlsx");
+            await analyzer.ExportResultsAsync(results, "formula_analysis.xlsx");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fatal error: {ex}");
+        }
+    }
+}
