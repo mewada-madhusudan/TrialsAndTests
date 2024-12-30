@@ -1,247 +1,161 @@
 using ClosedXML.Excel;
 using System;
-using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
+using System.Collections.Generic;
+using System.Linq;
 
-public class FormulaAnalyzer
+public class FormulaPattern
 {
-    public class FormulaPattern
+    public string StartCell { get; set; }
+    public string Formula { get; set; }
+    public string DragDirection { get; set; }
+    public List<string> AffectedCells { get; set; }
+
+    public FormulaPattern()
     {
-        public string Sheet { get; set; }
-        public string StartCell { get; set; }
-        public string BaseFormula { get; set; }
-        public string DragDirection { get; set; }
-        public int SequenceLength { get; set; }
-        public string LastCell { get; set; }
-        public bool IsInPivotSheet { get; set; }
+        AffectedCells = new List<string>();
     }
+}
 
-    private readonly IProgress<string> _progress;
-    private readonly ConcurrentBag<FormulaPattern> _patterns = new();
-
-    public FormulaAnalyzer(IProgress<string> progress = null)
+public class ExcelFormulaAnalyzer
+{
+    public List<FormulaPattern> AnalyzeExcelFile(string filePath)
     {
-        _progress = progress ?? new Progress<string>(msg => 
-            Console.WriteLine($"{DateTime.Now:HH:mm:ss.fff}: {msg}"));
-    }
-
-    public void AnalyzeFormulas(string filePath)
-    {
-        LogProgress($"Starting analysis of {filePath}");
+        var patterns = new List<FormulaPattern>();
         
-        using var workbook = new XLWorkbook(filePath);
-        foreach (var worksheet in workbook.Worksheets)
+        using (var workbook = new XLWorkbook(filePath))
         {
-            ProcessWorksheet(worksheet);
-        }
-        
-        ExportResults("formula_patterns.xlsx");
-    }
+            var worksheet = workbook.Worksheet(1); // Analyze first worksheet
+            
+            // Get all cells with formulas
+            var formulaCells = worksheet.CellsUsed()
+                .Where(cell => cell.HasFormula)
+                .OrderBy(cell => cell.Address.RowNumber)
+                .ThenBy(cell => cell.Address.ColumnNumber)
+                .ToList();
 
-    private void ProcessWorksheet(IXLWorksheet worksheet)
-    {
-        LogProgress($"Processing worksheet: {worksheet.Name}");
-        var usedRange = worksheet.RangeUsed();
-        if (usedRange == null) return;
+            var processedCells = new HashSet<string>();
 
-        var formulaCells = usedRange.Cells()
-            .Where(cell => cell.HasFormula)
-            .ToList();
-
-        var processedCells = new HashSet<string>();
-
-        foreach (var cell in formulaCells)
-        {
-            if (processedCells.Contains(cell.Address.ToString()))
-                continue;
-
-            var pattern = DetectPattern(worksheet, cell);
-            if (pattern != null)
+            foreach (var cell in formulaCells)
             {
-                _patterns.Add(pattern);
-                // Add all cells in this pattern to processed cells
-                var cells = GetCellsInPattern(pattern);
-                foreach (var c in cells)
-                    processedCells.Add(c);
+                if (processedCells.Contains(cell.Address.ToString()))
+                    continue;
+
+                var pattern = new FormulaPattern
+                {
+                    StartCell = cell.Address.ToString(),
+                    Formula = cell.FormulaA1
+                };
+
+                // Check for row-wise pattern
+                var rowPattern = FindRowPattern(worksheet, cell, processedCells);
+                if (rowPattern.Count > 1)
+                {
+                    pattern.DragDirection = "Row-wise";
+                    pattern.AffectedCells = rowPattern;
+                    patterns.Add(pattern);
+                    continue;
+                }
+
+                // Check for column-wise pattern
+                var columnPattern = FindColumnPattern(worksheet, cell, processedCells);
+                if (columnPattern.Count > 1)
+                {
+                    pattern.DragDirection = "Column-wise";
+                    pattern.AffectedCells = columnPattern;
+                    patterns.Add(pattern);
+                    continue;
+                }
+
+                // Single cell formula
+                pattern.DragDirection = "Single";
+                pattern.AffectedCells = new List<string> { cell.Address.ToString() };
+                patterns.Add(pattern);
             }
         }
+
+        return patterns;
     }
 
-    private FormulaPattern DetectPattern(IXLWorksheet worksheet, IXLCell startCell)
+    private List<string> FindRowPattern(IXLWorksheet worksheet, IXLCell startCell, HashSet<string> processedCells)
     {
+        var pattern = new List<string>();
+        var currentRow = startCell.Address.RowNumber;
+        var column = startCell.Address.ColumnNumber;
         var baseFormula = startCell.FormulaA1;
+
+        while (true)
+        {
+            var cell = worksheet.Cell(currentRow, column);
+            if (!cell.HasFormula || !IsRowWiseFormula(baseFormula, cell.FormulaA1, currentRow - startCell.Address.RowNumber))
+                break;
+
+            pattern.Add(cell.Address.ToString());
+            processedCells.Add(cell.Address.ToString());
+            currentRow++;
+        }
+
+        return pattern;
+    }
+
+    private List<string> FindColumnPattern(IXLWorksheet worksheet, IXLCell startCell, HashSet<string> processedCells)
+    {
+        var pattern = new List<string>();
         var row = startCell.Address.RowNumber;
-        var col = startCell.Address.ColumnNumber;
+        var currentColumn = startCell.Address.ColumnNumber;
+        var baseFormula = startCell.FormulaA1;
 
-        // Check for row-wise pattern
-        var rowPattern = CheckRowPattern(worksheet, row, col, baseFormula);
-        if (rowPattern.Item1)
-        {
-            return new FormulaPattern
-            {
-                Sheet = worksheet.Name,
-                StartCell = startCell.Address.ToString(),
-                BaseFormula = baseFormula,
-                DragDirection = "Row-wise",
-                SequenceLength = rowPattern.Item2,
-                LastCell = worksheet.Cell(row, col + rowPattern.Item2 - 1).Address.ToString(),
-                IsInPivotSheet = worksheet.PivotTables.Any()
-            };
-        }
-
-        // Check for column-wise pattern
-        var colPattern = CheckColumnPattern(worksheet, row, col, baseFormula);
-        if (colPattern.Item1)
-        {
-            return new FormulaPattern
-            {
-                Sheet = worksheet.Name,
-                StartCell = startCell.Address.ToString(),
-                BaseFormula = baseFormula,
-                DragDirection = "Column-wise",
-                SequenceLength = colPattern.Item2,
-                LastCell = worksheet.Cell(row + colPattern.Item2 - 1, col).Address.ToString(),
-                IsInPivotSheet = worksheet.PivotTables.Any()
-            };
-        }
-
-        return null;
-    }
-
-    private (bool, int) CheckRowPattern(IXLWorksheet worksheet, int row, int col, string baseFormula)
-    {
-        int length = 1;
         while (true)
         {
-            var nextCell = worksheet.Cell(row, col + length);
-            if (!nextCell.HasFormula) break;
+            var cell = worksheet.Cell(row, currentColumn);
+            if (!cell.HasFormula || !IsColumnWiseFormula(baseFormula, cell.FormulaA1, currentColumn - startCell.Address.ColumnNumber))
+                break;
 
-            var expectedFormula = IncrementFormulaColumns(baseFormula, length);
-            if (nextCell.FormulaA1 != expectedFormula) break;
-
-            length++;
-        }
-        return (length > 1, length);
-    }
-
-    private (bool, int) CheckColumnPattern(IXLWorksheet worksheet, int row, int col, string baseFormula)
-    {
-        int length = 1;
-        while (true)
-        {
-            var nextCell = worksheet.Cell(row + length, col);
-            if (!nextCell.HasFormula) break;
-
-            var expectedFormula = IncrementFormulaRows(baseFormula, length);
-            if (nextCell.FormulaA1 != expectedFormula) break;
-
-            length++;
-        }
-        return (length > 1, length);
-    }
-
-    private string IncrementFormulaColumns(string formula, int increment)
-    {
-        return Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
-        {
-            var column = match.Groups[1].Value;
-            var row = match.Groups[2].Value;
-            var newCol = GetOffsetColumn(column, increment);
-            return $"{newCol}{row}";
-        });
-    }
-
-    private string IncrementFormulaRows(string formula, int increment)
-    {
-        return Regex.Replace(formula, @"([A-Z]+)(\d+)", match =>
-        {
-            var column = match.Groups[1].Value;
-            var row = int.Parse(match.Groups[2].Value);
-            return $"{column}{row + increment}";
-        });
-    }
-
-    private string GetOffsetColumn(string column, int offset)
-    {
-        int colNum = 0;
-        for (int i = 0; i < column.Length; i++)
-        {
-            colNum *= 26;
-            colNum += column[i] - 'A' + 1;
-        }
-        colNum += offset;
-
-        string result = "";
-        while (colNum > 0)
-        {
-            colNum--;
-            result = (char)('A' + (colNum % 26)) + result;
-            colNum /= 26;
-        }
-        return result;
-    }
-
-    private List<string> GetCellsInPattern(FormulaPattern pattern)
-    {
-        var cells = new List<string>();
-        var startAddress = new XLAddress(pattern.StartCell);
-        var lastAddress = new XLAddress(pattern.LastCell);
-
-        if (pattern.DragDirection == "Row-wise")
-        {
-            for (int col = startAddress.ColumnNumber; col <= lastAddress.ColumnNumber; col++)
-            {
-                cells.Add(XLHelper.GetColumnLetterFromNumber(col) + startAddress.RowNumber);
-            }
-        }
-        else
-        {
-            for (int row = startAddress.RowNumber; row <= lastAddress.RowNumber; row++)
-            {
-                cells.Add(XLHelper.GetColumnLetterFromNumber(startAddress.ColumnNumber) + row);
-            }
+            pattern.Add(cell.Address.ToString());
+            processedCells.Add(cell.Address.ToString());
+            currentColumn++;
         }
 
-        return cells;
+        return pattern;
     }
 
-    private void ExportResults(string outputPath)
+    private bool IsRowWiseFormula(string baseFormula, string currentFormula, int rowOffset)
     {
-        LogProgress("Creating output file...");
-        using var workbook = new XLWorkbook();
-        var sheet = workbook.AddWorksheet("Formula Patterns");
-
-        // Add headers
-        sheet.Cell("A1").Value = "Sheet";
-        sheet.Cell("B1").Value = "Start Cell";
-        sheet.Cell("C1").Value = "Base Formula";
-        sheet.Cell("D1").Value = "Drag Direction";
-        sheet.Cell("E1").Value = "Sequence Length";
-        sheet.Cell("F1").Value = "Last Cell";
-        sheet.Cell("G1").Value = "In Pivot Sheet";
-
-        // Add data
-        var row = 2;
-        foreach (var pattern in _patterns.OrderBy(p => p.Sheet).ThenBy(p => p.StartCell))
+        if (rowOffset == 0) return true;
+        
+        // Replace row numbers in the base formula
+        var expectedFormula = baseFormula;
+        for (int i = 0; i <= 9; i++)
         {
-            sheet.Cell(row, 1).Value = pattern.Sheet;
-            sheet.Cell(row, 2).Value = pattern.StartCell;
-            sheet.Cell(row, 3).Value = pattern.BaseFormula;
-            sheet.Cell(row, 4).Value = pattern.DragDirection;
-            sheet.Cell(row, 5).Value = pattern.SequenceLength;
-            sheet.Cell(row, 6).Value = pattern.LastCell;
-            sheet.Cell(row, 7).Value = pattern.IsInPivotSheet;
-            row++;
+            expectedFormula = expectedFormula.Replace($"{i}", $"{i + rowOffset}");
         }
 
-        // Set column widths
-        sheet.Columns().AdjustToContents();
-        workbook.SaveAs(outputPath);
-        LogProgress("Results exported successfully!");
+        return expectedFormula == currentFormula;
     }
 
-    private void LogProgress(string message)
+    private bool IsColumnWiseFormula(string baseFormula, string currentFormula, int columnOffset)
     {
-        _progress?.Report($"{DateTime.Now:HH:mm:ss.fff}: {message}");
+        if (columnOffset == 0) return true;
+
+        // Convert column numbers to letters and replace
+        var expectedFormula = baseFormula;
+        for (char c = 'A'; c <= 'Z'; c++)
+        {
+            var newColumn = (char)(c + columnOffset);
+            expectedFormula = expectedFormula.Replace(c.ToString(), newColumn.ToString());
+        }
+
+        return expectedFormula == currentFormula;
     }
+}
+
+var analyzer = new ExcelFormulaAnalyzer();
+var results = analyzer.AnalyzeExcelFile("path/to/your/excel/file.xlsx");
+
+foreach (var pattern in results)
+{
+    Console.WriteLine($"Start Cell: {pattern.StartCell}");
+    Console.WriteLine($"Formula: {pattern.Formula}");
+    Console.WriteLine($"Direction: {pattern.DragDirection}");
+    Console.WriteLine($"Affected Cells: {string.Join(", ", pattern.AffectedCells)}");
+    Console.WriteLine();
 }
