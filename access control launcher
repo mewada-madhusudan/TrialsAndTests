@@ -1,0 +1,311 @@
+#access.py
+import sqlite3
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
+                            QLabel, QTableWidget, QTableWidgetItem, QComboBox,
+                            QMessageBox, QHeaderView)
+from PyQt6.QtCore import Qt
+
+class AccessControlDialog(QDialog):
+    def __init__(self, username, lob, parent=None):
+        super().__init__(parent)
+        self.username = username
+        self.lob = lob
+        self.db = Database("launcher.db")
+        self.setWindowTitle("Access Control Management")
+        self.setMinimumSize(800, 600)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Header
+        header_layout = QHBoxLayout()
+        title = QLabel("Access Control Management")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_layout.addWidget(title)
+        layout.addLayout(header_layout)
+        
+        # Filters
+        filter_layout = QHBoxLayout()
+        
+        # Application filter
+        self.app_filter = QComboBox()
+        self.app_filter.addItem("All Applications")
+        self.load_applications()
+        filter_layout.addWidget(QLabel("Application:"))
+        filter_layout.addWidget(self.app_filter)
+        
+        # User filter
+        self.user_filter = QComboBox()
+        self.user_filter.addItem("All Users")
+        self.load_users()
+        filter_layout.addWidget(QLabel("User:"))
+        filter_layout.addWidget(self.user_filter)
+        
+        filter_layout.addStretch()
+        layout.addLayout(filter_layout)
+        
+        # Table
+        self.table = QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["User ID", "Username", "Application", "Access Status", "Actions"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        layout.addWidget(self.table)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        add_button = QPushButton("Add New Access")
+        add_button.clicked.connect(self.add_new_access)
+        button_layout.addWidget(add_button)
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+        
+        # Style
+        self.setStyleSheet("""
+            QDialog {
+                background-color: white;
+            }
+            QPushButton {
+                background-color: #4a90e2;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #357abd;
+            }
+            QTableWidget {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+            }
+            QHeaderView::section {
+                background-color: #f8f9fa;
+                padding: 8px;
+                border: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+        """)
+        
+        # Load initial data
+        self.load_access_data()
+        
+        # Connect filters
+        self.app_filter.currentTextChanged.connect(self.load_access_data)
+        self.user_filter.currentTextChanged.connect(self.load_access_data)
+    
+    def load_applications(self):
+        try:
+            query = """
+                SELECT DISTINCT name FROM applications 
+                WHERE id IN (
+                    SELECT app_id FROM user_app_access 
+                    WHERE user_id IN (
+                        SELECT id FROM users WHERE lob = ?
+                    )
+                )
+            """
+            self.db.cursor.execute(query, (self.lob,))
+            apps = self.db.cursor.fetchall()
+            for app in apps:
+                self.app_filter.addItem(app[0])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load applications: {str(e)}")
+    
+    def load_users(self):
+        try:
+            query = "SELECT username FROM users WHERE lob = ?"
+            self.db.cursor.execute(query, (self.lob,))
+            users = self.db.cursor.fetchall()
+            for user in users:
+                self.user_filter.addItem(user[0])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load users: {str(e)}")
+    
+    def load_access_data(self):
+        try:
+            self.table.setRowCount(0)
+            
+            query = """
+                SELECT u.id, u.username, a.name, uaa.status
+                FROM users u
+                JOIN user_app_access uaa ON u.id = uaa.user_id
+                JOIN applications a ON a.id = uaa.app_id
+                WHERE u.lob = ?
+            """
+            params = [self.lob]
+            
+            if self.app_filter.currentText() != "All Applications":
+                query += " AND a.name = ?"
+                params.append(self.app_filter.currentText())
+            
+            if self.user_filter.currentText() != "All Users":
+                query += " AND u.username = ?"
+                params.append(self.user_filter.currentText())
+            
+            self.db.cursor.execute(query, tuple(params))
+            results = self.db.cursor.fetchall()
+            
+            for row, data in enumerate(results):
+                self.table.insertRow(row)
+                for col, value in enumerate(data):
+                    item = QTableWidgetItem(str(value))
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.table.setItem(row, col, item)
+                
+                # Add action button
+                action_button = QPushButton("Remove Access")
+                action_button.clicked.connect(lambda checked, r=row: self.remove_access(r))
+                self.table.setCellWidget(row, 4, action_button)
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load access data: {str(e)}")
+    
+    def add_new_access(self):
+        dialog = AddAccessDialog(self.lob, self.db, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_access_data()
+    
+    def remove_access(self, row):
+        try:
+            user_id = self.table.item(row, 0).text()
+            app_name = self.table.item(row, 2).text()
+            
+            reply = QMessageBox.question(self, 'Confirm Removal', 
+                                       f'Are you sure you want to remove access for this user?',
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                query = """
+                    DELETE FROM user_app_access 
+                    WHERE user_id = ? AND app_id = (
+                        SELECT id FROM applications WHERE name = ?
+                    )
+                """
+                self.db.cursor.execute(query, (user_id, app_name))
+                self.db.conn.commit()
+                self.load_access_data()
+                QMessageBox.information(self, "Success", "Access removed successfully")
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to remove access: {str(e)}")
+
+class AddAccessDialog(QDialog):
+    def __init__(self, lob, db, parent=None):
+        super().__init__(parent)
+        self.lob = lob
+        self.db = db
+        self.setWindowTitle("Add New Access")
+        self.setup_ui()
+    
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # User selection
+        self.user_combo = QComboBox()
+        self.load_users()
+        layout.addWidget(QLabel("Select User:"))
+        layout.addWidget(self.user_combo)
+        
+        # Application selection
+        self.app_combo = QComboBox()
+        self.load_applications()
+        layout.addWidget(QLabel("Select Application:"))
+        layout.addWidget(self.app_combo)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("Save")
+        save_button.clicked.connect(self.save_access)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+    
+    def load_users(self):
+        try:
+            query = "SELECT username FROM users WHERE lob = ?"
+            self.db.cursor.execute(query, (self.lob,))
+            users = self.db.cursor.fetchall()
+            for user in users:
+                self.user_combo.addItem(user[0])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load users: {str(e)}")
+    
+    def load_applications(self):
+        try:
+            query = "SELECT name FROM applications"
+            self.db.cursor.execute(query)
+            apps = self.db.cursor.fetchall()
+            for app in apps:
+                self.app_combo.addItem(app[0])
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load applications: {str(e)}")
+    
+    def save_access(self):
+        try:
+            username = self.user_combo.currentText()
+            app_name = self.app_combo.currentText()
+            
+            # Check if access already exists
+            query = """
+                SELECT 1 FROM user_app_access 
+                WHERE user_id = (SELECT id FROM users WHERE username = ?)
+                AND app_id = (SELECT id FROM applications WHERE name = ?)
+            """
+            self.db.cursor.execute(query, (username, app_name))
+            if self.db.cursor.fetchone():
+                QMessageBox.warning(self, "Warning", "User already has access to this application")
+                return
+            
+            # Add new access
+            query = """
+                INSERT INTO user_app_access (user_id, app_id, status)
+                VALUES (
+                    (SELECT id FROM users WHERE username = ?),
+                    (SELECT id FROM applications WHERE name = ?),
+                    'ACTIVE'
+                )
+            """
+            self.db.cursor.execute(query, (username, app_name))
+            self.db.conn.commit()
+            
+            QMessageBox.information(self, "Success", "Access granted successfully")
+            self.accept()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to grant access: {str(e)}")
+
+#mainwindow.py
+# Add these imports at the top of the file
+from PyQt6.QtWidgets import QPushButton
+
+# In the MainWindow class, modify the sidebar creation:
+def __init__(self):
+    # ... (existing initialization code) ...
+    
+    # After creating the sidebar_layout, before the exit button:
+    
+    # Add Access Control button for managers
+    self.access_control_button = QPushButton("Access Control")
+    self.access_control_button.clicked.connect(self.show_access_control)
+    # Only show the button for managers (you'll need to implement the is_manager check)
+    if self.is_manager():
+        sidebar_layout.addWidget(self.access_control_button)
+    
+    # ... (rest of the initialization code) ...
+
+def is_manager(self):
+    try:
+        query = "SELECT is_manager FROM users WHERE username = ?"
+        self.db.cursor.execute(query, (self.username,))
+        result = self.db.cursor.fetchone()
+        return result[0] if result else False
+    except Exception as e:
+        print(f"Error checking manager status: {str(e)}")
+        return False
+
+def show_access_control(self):
+    dialog = AccessControlDialog(self.username, "CORPORATE", self)
+    dialog.exec()
