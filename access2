@@ -1,0 +1,246 @@
+import pandas as pd
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                            QHBoxLayout, QPushButton, QLabel, QLineEdit, 
+                            QListWidget, QStackedWidget, QScrollArea, 
+                            QMessageBox, QFrame)
+from PyQt6.QtCore import Qt
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Access Control System")
+        self.setMinimumSize(800, 600)
+        
+        # Initialize data
+        self.df = pd.DataFrame({
+            'application_name': ['App1', 'App2', 'App3'],
+            'exe_path': ['/path1', '/path2', '/path3'],
+            'lob': ['LOB1', 'LOB2', 'LOB1'],
+            'sids': ['SID1,SID2', 'SID3', 'SID4,SID5,SID6']
+        })
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        # Create central widget and main layout
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Create stacked widget for different screens
+        self.stacked_widget = QStackedWidget()
+        
+        # Add first screen (main menu)
+        self.setup_main_menu()
+        
+        # Add second screen (add application)
+        self.setup_add_application()
+        
+        # Add third screen (manage access)
+        self.setup_manage_access()
+        
+        main_layout.addWidget(self.stacked_widget)
+        
+    def setup_main_menu(self):
+        menu_widget = QWidget()
+        layout = QVBoxLayout(menu_widget)
+        
+        # Add title
+        title = QLabel("Access Control Management")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; margin: 20px;")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+        
+        # Add buttons
+        add_app_btn = QPushButton("Add New Application")
+        manage_access_btn = QPushButton("Manage User Access")
+        
+        add_app_btn.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(1))
+        manage_access_btn.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(2))
+        
+        for btn in (add_app_btn, manage_access_btn):
+            btn.setMinimumHeight(50)
+            btn.setStyleSheet("""
+                QPushButton {
+                    font-size: 16px;
+                    background-color: #4a90e2;
+                    color: white;
+                    border-radius: 5px;
+                    padding: 10px;
+                    margin: 10px 50px;
+                }
+                QPushButton:hover {
+                    background-color: #357abd;
+                }
+            """)
+            layout.addWidget(btn)
+        
+        layout.addStretch()
+        self.stacked_widget.addWidget(menu_widget)
+        
+    def setup_add_application(self):
+        app_widget = QWidget()
+        layout = QVBoxLayout(app_widget)
+        
+        # Add header with back button
+        header_layout = QHBoxLayout()
+        back_btn = QPushButton("← Back")
+        back_btn.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        header_layout.addWidget(back_btn)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Add form fields
+        fields = [
+            ("Application Name:", "application_name"),
+            ("Application Exe path:", "exe_path"),
+            ("LOB:", "lob"),
+            ("SIDs:", "sids")
+        ]
+        
+        self.add_app_fields = {}
+        for label_text, field_name in fields:
+            field_layout = QHBoxLayout()
+            label = QLabel(label_text)
+            label.setMinimumWidth(150)
+            line_edit = QLineEdit()
+            self.add_app_fields[field_name] = line_edit
+            field_layout.addWidget(label)
+            field_layout.addWidget(line_edit)
+            layout.addLayout(field_layout)
+        
+        # Add save button
+        save_btn = QPushButton("Save Application")
+        save_btn.clicked.connect(self.save_application)
+        layout.addWidget(save_btn)
+        
+        layout.addStretch()
+        self.stacked_widget.addWidget(app_widget)
+        
+    def setup_manage_access(self):
+        access_widget = QWidget()
+        layout = QHBoxLayout(access_widget)
+        
+        # Left panel for application list
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        
+        # Add back button
+        back_btn = QPushButton("← Back")
+        back_btn.clicked.connect(lambda: self.stacked_widget.setCurrentIndex(0))
+        left_layout.addWidget(back_btn)
+        
+        # Add application list
+        self.app_list = QListWidget()
+        self.app_list.addItems(self.df['application_name'].tolist())
+        self.app_list.currentItemChanged.connect(self.show_application_users)
+        left_layout.addWidget(self.app_list)
+        
+        # Right panel for user management
+        right_panel = QWidget()
+        self.right_layout = QVBoxLayout(right_panel)
+        
+        # Add new user section
+        add_user_layout = QHBoxLayout()
+        self.new_user_input = QLineEdit()
+        self.new_user_input.setPlaceholderText("Enter new user SID")
+        add_user_btn = QPushButton("Add User")
+        add_user_btn.clicked.connect(self.add_new_user)
+        add_user_layout.addWidget(self.new_user_input)
+        add_user_layout.addWidget(add_user_btn)
+        self.right_layout.addLayout(add_user_layout)
+        
+        # Users list will be populated when an application is selected
+        self.users_widget = QWidget()
+        self.users_layout = QVBoxLayout(self.users_widget)
+        self.right_layout.addWidget(self.users_widget)
+        
+        # Add panels to main layout
+        layout.addWidget(left_panel, 1)
+        layout.addWidget(right_panel, 2)
+        
+        self.stacked_widget.addWidget(access_widget)
+        
+    def save_application(self):
+        # Get values from form fields
+        new_app = {field: widget.text() for field, widget in self.add_app_fields.items()}
+        
+        # Add to DataFrame
+        self.df = pd.concat([self.df, pd.DataFrame([new_app])], ignore_index=True)
+        
+        # Clear fields and return to main menu
+        for widget in self.add_app_fields.values():
+            widget.clear()
+        
+        # Update application list in manage access screen
+        self.app_list.clear()
+        self.app_list.addItems(self.df['application_name'].tolist())
+        
+        QMessageBox.information(self, "Success", "Application added successfully!")
+        self.stacked_widget.setCurrentIndex(0)
+        
+    def show_application_users(self, current_item):
+        if not current_item:
+            return
+            
+        # Clear previous users
+        for i in reversed(range(self.users_layout.count())):
+            self.users_layout.itemAt(i).widget().setParent(None)
+            
+        # Get users for selected application
+        app_name = current_item.text()
+        app_data = self.df[self.df['application_name'] == app_name].iloc[0]
+        users = app_data['sids'].split(',')
+        
+        # Add user entries
+        for user in users:
+            user_frame = QFrame()
+            user_frame.setFrameStyle(QFrame.Shape.Box)
+            user_layout = QHBoxLayout(user_frame)
+            
+            user_label = QLabel(user.strip())
+            remove_btn = QPushButton("Remove")
+            remove_btn.clicked.connect(lambda checked, u=user, a=app_name: 
+                                    self.remove_user(u, a))
+            
+            user_layout.addWidget(user_label)
+            user_layout.addWidget(remove_btn)
+            
+            self.users_layout.addWidget(user_frame)
+            
+        self.users_layout.addStretch()
+        
+    def add_new_user(self):
+        if not self.app_list.currentItem():
+            QMessageBox.warning(self, "Warning", "Please select an application first!")
+            return
+            
+        new_sid = self.new_user_input.text().strip()
+        if not new_sid:
+            return
+            
+        app_name = self.app_list.currentItem().text()
+        app_idx = self.df[self.df['application_name'] == app_name].index[0]
+        
+        current_sids = self.df.at[app_idx, 'sids'].split(',')
+        if new_sid not in current_sids:
+            current_sids.append(new_sid)
+            self.df.at[app_idx, 'sids'] = ','.join(current_sids)
+            
+        self.new_user_input.clear()
+        self.show_application_users(self.app_list.currentItem())
+        
+    def remove_user(self, user, app_name):
+        app_idx = self.df[self.df['application_name'] == app_name].index[0]
+        current_sids = self.df.at[app_idx, 'sids'].split(',')
+        current_sids.remove(user)
+        self.df.at[app_idx, 'sids'] = ','.join(current_sids)
+        
+        self.show_application_users(self.app_list.currentItem())
+
+if __name__ == '__main__':
+    import sys
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
