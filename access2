@@ -3,8 +3,45 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                              QLabel, QLineEdit, QTableWidget, QTableWidgetItem,
                              QMessageBox, QHeaderView, QWidget, QStackedWidget,
-                             QFrame, QScrollArea, QListWidget)
-from PyQt6.QtCore import Qt, QPropertyAnimation
+                             QFrame, QScrollArea, QListWidget, QListWidgetItem)
+from PyQt6.QtCore import Qt, QPropertyAnimation, QSize
+
+
+class AppTileWidget(QFrame):
+    def __init__(self, name, description, parent=None):
+        super().__init__(parent)
+        self.setObjectName("appTile")
+        self.setFixedHeight(100)  # Fixed height for consistency
+        self.setup_ui(name, description)
+
+    def setup_ui(self, name, description):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(4)
+
+        # App icon/emoji (placeholder)
+        icon_label = QLabel("🔹")
+        icon_label.setProperty("appIcon", True)
+
+        # App name with icon in horizontal layout
+        name_layout = QHBoxLayout()
+        name_layout.setSpacing(8)
+        name_layout.addWidget(icon_label)
+
+        name_label = QLabel(name)
+        name_label.setProperty("appName", True)
+        name_label.setWordWrap(True)
+        name_layout.addWidget(name_label)
+        name_layout.addStretch()
+
+        # Description
+        desc_label = QLabel(description)
+        desc_label.setProperty("appDescription", True)
+        desc_label.setWordWrap(True)
+
+        layout.addLayout(name_layout)
+        layout.addWidget(desc_label)
+        layout.addStretch()
 
 
 class AccessControlDialog(QDialog):
@@ -15,6 +52,8 @@ class AccessControlDialog(QDialog):
 
         self.df = pd.DataFrame({
             'application_name': ['App1', 'App2', 'App3'],
+            'description': ['First application description', 'Second application description',
+                            'Third application description'],
             'exe_path': ['/path1', '/path2', '/path3'],
             'lob': ['LOB1', 'LOB2', 'LOB1'],
             'sids': ['SID1,SID2', 'SID3', 'SID4,SID5,SID6']
@@ -86,6 +125,15 @@ class AccessControlDialog(QDialog):
                 background-color: #ef5350;
                 color: white;
             }
+            QFrame#appTile {
+                background-color: #f8f9fa;
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+            }
+            QFrame#appTile:hover {
+                background-color: #f5f5f5;
+                border: 1px solid #bbdefb;
+            }
             QLineEdit {
                 border: 2px solid #e0e0e0;
                 padding: 8px;
@@ -103,20 +151,17 @@ class AccessControlDialog(QDialog):
                 border: 1px solid #e0e0e0;
                 border-radius: 4px;
                 background-color: white;
-                font-size: 14px;
+                padding: 8px;
             }
             QListWidget::item {
-                padding: 12px;
-                border-radius: 4px;
-                margin: 2px 4px;
+                padding: 4px;
+                border-radius: 6px;
             }
             QListWidget::item:selected {
                 background-color: #e3f2fd;
-                color: #1976d2;
-                font-weight: 500;
             }
             QListWidget::item:hover {
-                background-color: #f5f5f5;
+                background-color: transparent;
             }
             QFrame#leftPanel {
                 background-color: #fafafa;
@@ -148,6 +193,61 @@ class AccessControlDialog(QDialog):
                 font-weight: 500;
                 color: #666;
                 padding-bottom: 8px;
+            }
+            QLabel[appName="true"] {
+                font-size: 15px;
+                font-weight: bold;
+                color: #1976d2;
+                margin-bottom: 4px;
+            }
+            QLabel[appDescription="true"] {
+                font-size: 12px;
+                color: #666;
+                line-height: 1.4;
+            }
+            QFrame#appTile {
+                background-color: white;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                margin: 4px 8px;
+            }
+            QFrame#appTile:hover {
+                background-color: #f8f9fa;
+                border: 1px solid #1976d2;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+            QLabel[appName="true"] {
+                font-size: 14px;
+                font-weight: bold;
+                color: #1976d2;
+                margin-bottom: 4px;
+            }
+            QLabel[appDescription="true"] {
+                font-size: 12px;
+                color: #666;
+                line-height: 1.4;
+                margin-top: 4px;
+            }
+            QLabel[appIcon="true"] {
+                font-size: 16px;
+                color: #1976d2;
+            }
+            QListWidget {
+                background-color: #f5f5f5;
+                border: none;
+                border-radius: 0px;
+                padding: 8px 4px;
+            }
+            QListWidget::item {
+                padding: 0px;
+                margin: 4px 0px;
+                border: none;
+            }
+            QListWidget::item:selected {
+                background-color: transparent;
+            }
+            QListWidget::item:hover {
+                background-color: transparent;
             }
         """)
 
@@ -196,6 +296,7 @@ class AccessControlDialog(QDialog):
 
         fields = [
             ("Application Name", "application_name", "Enter the name of the application"),
+            ("Application Description", "description", "Enter a brief description of the application"),
             ("Executable Path", "exe_path", "Enter the full path to the executable"),
             ("Line of Business", "lob", "Enter the business unit or department"),
             ("Security IDs", "sids", "Enter comma-separated security IDs")
@@ -233,7 +334,7 @@ class AccessControlDialog(QDialog):
         manage_layout.setContentsMargins(0, 0, 0, 0)
         manage_layout.setSpacing(0)
 
-        # Apps list
+        # Apps list with tiles
         apps_container = QWidget()
         apps_layout = QVBoxLayout(apps_container)
         apps_layout.setContentsMargins(20, 20, 20, 20)
@@ -242,14 +343,18 @@ class AccessControlDialog(QDialog):
         apps_title.setProperty("heading", True)
 
         self.app_list = QListWidget()
-        self.app_list.addItems(self.df['application_name'].tolist())
+        self.app_list.setSpacing(8)
+        self.app_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.app_list.setViewMode(QListWidget.ViewMode.ListMode)  # Changed to ListMode
+        self.app_list.setMinimumWidth(300)
+        self.app_list.setUniformItemSizes(False)
+        self.update_app_list()
         self.app_list.currentItemChanged.connect(self.show_application_users)
-        self.app_list.setMinimumWidth(300)  # Make application list wider
 
         apps_layout.addWidget(apps_title)
         apps_layout.addWidget(self.app_list)
 
-        # Users section
+        # Users section [remains the same]
         users_container = QWidget()
         users_container.setStyleSheet("background-color: white;")
         users_layout = QVBoxLayout(users_container)
@@ -282,7 +387,6 @@ class AccessControlDialog(QDialog):
         self.users_widget.setWidget(self.users_container)
 
         users_layout.addWidget(self.users_widget)
-
         add_user_btn.clicked.connect(self.add_new_user)
 
         manage_layout.addWidget(apps_container, 1)
@@ -290,6 +394,15 @@ class AccessControlDialog(QDialog):
 
         self.right_stack.addWidget(add_app_widget)
         self.right_stack.addWidget(manage_widget)
+
+    def update_app_list(self):
+        self.app_list.clear()
+        for _, row in self.df.iterrows():
+            item = QListWidgetItem(self.app_list)
+            tile_widget = AppTileWidget(row['application_name'], row['description'])
+            item.setSizeHint(tile_widget.sizeHint())
+            self.app_list.setItemWidget(item, tile_widget)
+            item.setData(Qt.ItemDataRole.UserRole, row['application_name'])
 
     def create_sid_tag(self, sid):
         tag = QFrame()
@@ -331,6 +444,9 @@ class AccessControlDialog(QDialog):
         """)
         msg.exec()
 
+    def create_app_tile_widget(self, name, description):
+        return AppTileWidget(name, description)
+
     def show_application_users(self, current_item):
         if not current_item:
             return
@@ -342,7 +458,7 @@ class AccessControlDialog(QDialog):
                 widget.setParent(None)
 
         # Get users for selected application
-        app_name = current_item.text()
+        app_name = current_item.data(Qt.ItemDataRole.UserRole)
         app_data = self.df[self.df['application_name'] == app_name].iloc[0]
         users = app_data['sids'].split(',')
 
@@ -422,12 +538,9 @@ class AccessControlDialog(QDialog):
         for widget in self.add_app_fields.values():
             widget.clear()
 
-        self.app_list.clear()
-        self.app_list.addItems(self.df['application_name'].tolist())
+        self.update_app_list()
 
-        QMessageBox.information(self, "Success",
-                                "Application has been added successfully!",
-                                QMessageBox.StandardButton.Ok)
+        self.show_success_message("Application has been added successfully!")
 
     def add_new_user(self):
         if not self.app_list.currentItem():
