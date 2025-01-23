@@ -140,3 +140,32 @@ def apply_styles(self):
         }
         /* ... (keep other existing styles) ... */
     """)
+###################
+fields = [
+    ("Line of Business", "lob", ["LOB1", "LOB2", "LOB3", "LOB4"], "dropdown"),
+    ("Security Group", "security_group", ["Admin", "User", "Auditor", "Manager"], "dropdown"),
+    # Keep other fields as line edits
+    ("Application Name", "application_name", None, "text"),
+    ("Application Description", "description", None, "text"),
+    ("Executable Path", "exe_path", None, "text")
+]
+
+# In setup_right_panel method, modify the field creation logic:
+for label_text, field_name, options, field_type in fields:
+    field_layout = QVBoxLayout()
+    field_layout.setSpacing(6)
+
+    label = QLabel(label_text)
+    
+    if field_type == "dropdown":
+        field = QComboBox()
+        field.addItems(options)
+    else:
+        field = QLineEdit()
+        field.setPlaceholderText(f"Enter {label_text.lower()}")
+    
+    self.add_app_fields[field_name] = field
+    field_layout.addWidget(label)
+    field_layout.addWidget(field)
+
+    add_layout.addLayout(field_layout)
