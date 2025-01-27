@@ -1,0 +1,208 @@
+import getpass
+import os
+import shutil
+import sqlite3
+import sys
+
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QPainter, QBrush
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                             QPushButton, QLabel, QLineEdit, QGridLayout, QFrame, QProgressBar, QMessageBox,
+                             QScrollArea, QSizePolicy, QTabWidget, QStackedWidget)
+
+# Import the AccessControlDialog from the other file
+from sharepoint_access_control import AccessControlDialog  # Adjust import path as needed
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.all_tiles = []
+        self.username = getpass.getuser()
+        self.db = Database("launcher.db")
+        self.setWindowTitle("Application Launcher")
+        self.setMinimumSize(1200, 720)
+        
+        # Create stacked widget to switch between applications and access control
+        self.stacked_widget = QStackedWidget()
+        
+        # Create main content widget
+        main_content_widget = QWidget()
+        main_layout = QHBoxLayout(main_content_widget)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Sidebar
+        sidebar = QWidget()
+        sidebar.setFixedWidth(250)
+        sidebar.setStyleSheet("""
+            QWidget {
+                background-color: #2c3e50;
+                color: white;
+            }
+            QPushButton {
+                background-color: #6c5ce7;
+                color: white;
+                border: none;
+                padding: 10px;
+                margin: 10px 5px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5b4bc7;
+            }
+            QPushButton:checked {
+                background-color: #4a3a9c;
+            }
+        """)
+        sidebar_layout = QVBoxLayout(sidebar)
+
+        # Profile picture setup (existing code)
+        self.setup_profile_picture(sidebar_layout)
+
+        # Sidebar buttons
+        self.apps_btn = QPushButton("Applications")
+        self.access_control_btn = QPushButton("Access Control")
+        
+        self.apps_btn.setCheckable(True)
+        self.access_control_btn.setCheckable(True)
+        
+        sidebar_layout.addWidget(self.apps_btn)
+        sidebar_layout.addWidget(self.access_control_btn)
+        
+        sidebar_layout.addStretch()
+        exit_button = QPushButton("EXIT")
+        exit_button.clicked.connect(self.close)
+        sidebar_layout.addWidget(exit_button)
+
+        # Applications Content
+        applications_content = QWidget()
+        applications_layout = QVBoxLayout(applications_content)
+        applications_layout.setContentsMargins(30, 30, 30, 30)
+        applications_layout.setSpacing(20)
+
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QPixmap("C:\\Users\\madhu\\Desktop\\new_logo.png")
+        logo_label.setPixmap(logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio,
+                                                Qt.TransformationMode.SmoothTransformation))
+        applications_layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignRight)
+
+        # Title and search section
+        header_widget = QWidget()
+        header_layout = QVBoxLayout(header_widget)
+        header_layout.setSpacing(15)
+
+        app_title = QLabel("Applications")
+        app_title.setStyleSheet("""
+            font-size: 28px;
+            font-weight: bold;
+            color: #2c3e50;
+        """)
+        header_layout.addWidget(app_title)
+
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("🔍 Search applications...")
+        self.search_bar.textChanged.connect(self.filter_applications)
+        self.search_bar.setStyleSheet("""
+            QLineEdit {
+                border: 2px solid #e0e0e0;
+                border-radius: 25px;
+                padding: 12px 20px;
+                font-size: 14px;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border-color: #4a90e2;
+                outline: none;
+            }
+        """)
+        header_layout.addWidget(self.search_bar)
+        applications_layout.addWidget(header_widget)
+
+        # Custom Tab Widget
+        self.tab_widget = CustomTabWidget()
+        applications_layout.addWidget(self.tab_widget)
+
+        # Prod Scroll Area
+        self.prod_scroll = QScrollArea()
+        self.prod_scroll.setWidgetResizable(True)
+        self.prod_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        self.prod_widget = QWidget()
+        self.prod_layout = QGridLayout(self.prod_widget)
+        self.prod_layout.setSpacing(20)
+        self.prod_layout.setContentsMargins(0, 0, 20, 0)
+        self.prod_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+
+        self.prod_scroll.setWidget(self.prod_widget)
+        self.tab_widget.addTab(self.prod_scroll, "Applications")
+
+        # Create Access Control Widget
+        self.access_control_widget = AccessControlDialog()
+
+        # Add widgets to stacked widget
+        self.stacked_widget.addWidget(applications_content)
+        self.stacked_widget.addWidget(self.access_control_widget)
+
+        # Main layout setup
+        main_layout.addWidget(sidebar)
+        main_layout.addWidget(self.stacked_widget, 1)
+
+        # Set central widget
+        self.setCentralWidget(main_content_widget)
+
+        # Connect buttons to switch views
+        self.apps_btn.clicked.connect(self.show_applications)
+        self.access_control_btn.clicked.connect(self.show_access_control)
+
+        # Initial setup
+        self.load_applications()
+        self.show_applications()
+
+    def setup_profile_picture(self, sidebar_layout):
+        # Existing profile picture setup code from previous implementation
+        self.profile_pic = QLabel()
+        profile_pixmap = QPixmap("D:/Download/download.jpg")
+        scaled_pixmap = profile_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                              Qt.TransformationMode.SmoothTransformation)
+
+        # Create a circular mask
+        mask = QPixmap(150, 150)
+        mask.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(mask)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QBrush(Qt.GlobalColor.white))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(0, 0, 150, 150)
+        painter.end()
+
+        # Apply the mask to the scaled pixmap
+        rounded_pixmap = QPixmap(150, 150)
+        rounded_pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(rounded_pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.drawPixmap(0, 0, mask)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.drawPixmap(0, 0, scaled_pixmap)
+        painter.end()
+
+        self.profile_pic.setPixmap(rounded_pixmap)
+        self.profile_pic.setFixedSize(150, 150)
+        sidebar_layout.addWidget(self.profile_pic, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        sidebar_layout.addWidget(QLabel(f"SID: {self.username}"))
+        sidebar_layout.addWidget(QLabel("Name: John Doe"))  # Replace with actual user data
+        sidebar_layout.addWidget(QLabel("LOB: CORPORATE"))  # Replace with actual user data
+
+    def show_applications(self):
+        self.stacked_widget.setCurrentIndex(0)
+        self.apps_btn.setChecked(True)
+        self.access_control_btn.setChecked(False)
+
+    def show_access_control(self):
+        self.stacked_widget.setCurrentIndex(1)
+        self.apps_btn.setChecked(False)
+        self.access_control_btn.setChecked(True)
+
+    # Existing methods like load_applications, filter_applications, etc. remain the same
+    # ... (keep all other existing methods from the original MainWindow class)
