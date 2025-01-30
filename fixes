@@ -169,3 +169,154 @@ for label_text, field_name, options, field_type in fields:
     field_layout.addWidget(field)
 
     add_layout.addLayout(field_layout)
+#######:8";9"2+2
+def setup_right_panel(self):
+    # Add Application/Update Panel
+    add_update_widget = QWidget()
+    main_layout = QVBoxLayout(add_update_widget)
+    main_layout.setContentsMargins(0, 0, 0, 0)
+    main_layout.setSpacing(0)
+
+    # Create fixed header section
+    header_widget = QWidget()
+    header_layout = QVBoxLayout(header_widget)
+    header_layout.setContentsMargins(30, 20, 30, 10)  # Reduced bottom margin
+    header_layout.setSpacing(10)  # Reduced spacing
+
+    # Title section
+    title = QLabel("Application Details")
+    title.setProperty("heading", True)
+    header_layout.addWidget(title)
+
+    description = QLabel("Enter the application details below.")
+    description.setProperty("subheading", True)
+    header_layout.addWidget(description)
+
+    # Application selection for update mode
+    select_layout = QHBoxLayout()
+    select_layout.setSpacing(10)  # Reduced spacing
+    self.update_mode_checkbox = QCheckBox("Update Existing Application")
+    self.app_select_combo = QComboBox()
+    self.app_select_combo.setMinimumWidth(200)
+    self.app_select_combo.setEnabled(False)
+    
+    select_layout.addWidget(self.update_mode_checkbox)
+    select_layout.addWidget(self.app_select_combo)
+    select_layout.addStretch()
+    header_layout.addLayout(select_layout)
+
+    # Add header to main layout
+    main_layout.addWidget(header_widget)
+
+    # Create a scroll area for the form
+    scroll_area = QScrollArea()
+    scroll_area.setWidgetResizable(True)
+    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    
+    # Create container widget for the form
+    form_container = QWidget()
+    add_layout = QVBoxLayout(form_container)
+    add_layout.setContentsMargins(30, 10, 30, 20)  # Reduced top margin
+    add_layout.setSpacing(15)  # Reduced spacing
+
+    # Form fields
+    fields = [
+        ("application_name", "Application Name", "Enter the name of the application"),
+        ("description", "Application Description", "Enter a brief description"),
+        ("exe_path", "Executable Path", "Enter the full path to the executable"),
+        ("lob", "Line of Business", "Enter the business unit or department"),
+        ("version", "Version", "Enter application version"),
+        ("owner", "Owner", "Enter application owner"),
+        ("support_contact", "Support Contact", "Enter support contact information"),
+        ("deployment_date", "Deployment Date", "Enter deployment date"),
+        ("last_update", "Last Update Date", "Enter last update date"),
+        ("status", "Status", "Enter application status"),
+        ("environment", "Environment", "Enter deployment environment"),
+        ("dependencies", "Dependencies", "Enter application dependencies"),
+        ("backup_location", "Backup Location", "Enter backup location"),
+        ("sids", "Security IDs", "Enter comma-separated security IDs")
+    ]
+
+    self.add_app_fields = {}
+    for field_name, label_text, placeholder in fields:
+        field_layout = QVBoxLayout()
+        field_layout.setSpacing(4)  # Reduced spacing
+
+        label = QLabel(label_text)
+        label.setProperty("fieldLabel", True)
+        
+        line_edit = QLineEdit()
+        line_edit.setPlaceholderText(placeholder)
+        line_edit.setProperty("formInput", True)
+
+        self.add_app_fields[field_name] = line_edit
+        field_layout.addWidget(label)
+        field_layout.addWidget(line_edit)
+
+        add_layout.addLayout(field_layout)
+
+    # Button section
+    button_layout = QHBoxLayout()
+    self.save_btn = QPushButton("Save Application")
+    self.save_btn.setObjectName("actionButton")
+    self.save_btn.setFixedWidth(140)
+    
+    self.clear_btn = QPushButton("Clear Form")
+    self.clear_btn.setObjectName("secondaryButton")
+    self.clear_btn.setFixedWidth(140)
+    
+    button_layout.addStretch()
+    button_layout.addWidget(self.clear_btn)
+    button_layout.addWidget(self.save_btn)
+
+    add_layout.addLayout(button_layout)
+    add_layout.addStretch()
+
+    # Set the form container as the scroll area widget
+    scroll_area.setWidget(form_container)
+    main_layout.addWidget(scroll_area)
+
+    # Connect signals
+    self.update_mode_checkbox.toggled.connect(self.toggle_update_mode)
+    self.app_select_combo.currentTextChanged.connect(self.load_application_data)
+    self.save_btn.clicked.connect(self.save_application)
+    self.clear_btn.clicked.connect(self.clear_form)
+
+    self.right_stack.addWidget(add_update_widget)
+
+##____
+def apply_styles(self):
+    # Add these styles to your existing stylesheet
+    additional_styles = """
+        QWidget#headerWidget {
+            background-color: white;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        QScrollArea {
+            border: none;
+            background: white;
+        }
+        QComboBox {
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 6px;
+            min-height: 32px;
+            background: white;
+        }
+        QComboBox:disabled {
+            background: #f5f5f5;
+        }
+        QCheckBox {
+            spacing: 6px;
+            min-height: 32px;
+            padding: 2px;
+        }
+        QLabel[heading="true"] {
+            padding: 0px 0px 8px 0px;
+        }
+        QLabel[subheading="true"] {
+            padding: 0px 0px 4px 0px;
+        }
+    """
+    current_style = self.styleSheet()
+    self.setStyleSheet(current_style + additional_styles)
