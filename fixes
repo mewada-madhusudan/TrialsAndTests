@@ -319,7 +319,8 @@ def apply_styles(self):
         }
     """
     current_style = self.styleSheet()
-    self.setStyleSheet(current_style + additional_styles)########______
+    self.setStyleSheet(current_style + additional_styles)
+########______
 def setup_right_panel(self):
     # Previous add application panel code remains the same...
 
