@@ -319,4 +319,231 @@ def apply_styles(self):
         }
     """
     current_style = self.styleSheet()
+    self.setStyleSheet(current_style + additional_styles)########______
+def setup_right_panel(self):
+    # Previous add application panel code remains the same...
+
+    # Manage Access Panel
+    manage_widget = QWidget()
+    manage_layout = QHBoxLayout(manage_widget)
+    manage_layout.setContentsMargins(0, 0, 0, 0)
+    manage_layout.setSpacing(0)
+
+    # Left side - Apps list
+    apps_container = QWidget()
+    apps_container.setObjectName("appsContainer")
+    apps_layout = QVBoxLayout(apps_container)
+    apps_layout.setContentsMargins(20, 20, 20, 20)
+
+    apps_title = QLabel("Applications")
+    apps_title.setProperty("heading", True)
+
+    self.app_list = QListWidget()
+    self.app_list.setSpacing(8)
+    self.app_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+    self.app_list.setViewMode(QListWidget.ViewMode.ListMode)
+    self.app_list.setMinimumWidth(300)
+    self.app_list.setUniformItemSizes(False)
+    self.update_app_list()
+    self.app_list.currentItemChanged.connect(self.show_application_users)
+
+    apps_layout.addWidget(apps_title)
+    apps_layout.addWidget(self.app_list)
+
+    # Right side - Users section with updated styling
+    users_container = QWidget()
+    users_container.setObjectName("usersContainer")
+    users_layout = QVBoxLayout(users_container)
+    users_layout.setContentsMargins(20, 20, 20, 20)
+
+    users_title = QLabel("Manage Users")
+    users_title.setProperty("heading", True)
+    users_layout.addWidget(users_title)
+
+    # Add user section
+    add_user_layout = QHBoxLayout()
+    self.new_user_input = QLineEdit()
+    self.new_user_input.setPlaceholderText("Enter user SID to add")
+    add_user_btn = QPushButton("Add User")
+    add_user_btn.setObjectName("actionButton")
+    add_user_btn.setFixedWidth(100)
+
+    add_user_layout.addWidget(self.new_user_input)
+    add_user_layout.addWidget(add_user_btn)
+    users_layout.addLayout(add_user_layout)
+
+    # Users list section
+    users_list_label = QLabel("Current Users")
+    users_list_label.setProperty("subheading", True)
+    users_layout.addWidget(users_list_label)
+
+    self.users_widget = QScrollArea()
+    self.users_widget.setWidgetResizable(True)
+    self.users_widget.setObjectName("usersScrollArea")
+    
+    self.users_container = QWidget()
+    self.users_container.setObjectName("usersListContainer")
+    self.users_layout = QVBoxLayout(self.users_container)
+    self.users_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+    self.users_layout.setSpacing(8)
+    self.users_widget.setWidget(self.users_container)
+
+    users_layout.addWidget(self.users_widget)
+    add_user_btn.clicked.connect(self.add_new_user)
+
+    manage_layout.addWidget(apps_container, 1)
+    manage_layout.addWidget(users_container, 2)
+
+    self.right_stack.addWidget(manage_widget)
+
+def create_sid_tag(self, sid):
+    tag = QFrame()
+    tag.setObjectName("sidTag")
+    layout = QHBoxLayout(tag)
+    layout.setContentsMargins(8, 4, 8, 4)
+    layout.setSpacing(8)
+
+    # User icon and SID
+    icon_label = QLabel("👤")  # User icon
+    sid_label = QLabel(sid)
+    sid_label.setStyleSheet("color: #2c3e50; font-weight: 500;")
+    
+    # Remove button
+    remove_btn = QPushButton("Remove")
+    remove_btn.setObjectName("removeBtn")
+    remove_btn.setFixedWidth(70)
+
+    layout.addWidget(icon_label)
+    layout.addWidget(sid_label)
+    layout.addStretch()
+    layout.addWidget(remove_btn)
+
+    return tag, remove_btn
+
+def apply_styles(self):
+    # Add these styles to your existing stylesheet
+    additional_styles = """
+        QWidget#appsContainer {
+            background-color: #f8f9fa;
+            border-right: 1px solid #e0e0e0;
+        }
+        
+        QWidget#usersContainer {
+            background-color: white;
+        }
+        
+        QScrollArea#usersScrollArea {
+            border: none;
+            background-color: transparent;
+        }
+        
+        QWidget#usersListContainer {
+            background-color: transparent;
+        }
+        
+        QFrame#sidTag {
+            background-color: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 6px;
+            padding: 4px;
+            margin: 2px 0px;
+        }
+        
+        QFrame#sidTag:hover {
+            background-color: #bbdefb;
+            border-color: #90caf9;
+        }
+        
+        QPushButton#removeBtn {
+            background-color: #ef5350;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            min-width: 60px;
+        }
+        
+        QPushButton#removeBtn:hover {
+            background-color: #e53935;
+        }
+        
+        QLineEdit {
+            padding: 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            background-color: white;
+        }
+        
+        QLineEdit:focus {
+            border-color: #2196f3;
+        }
+        
+        QListWidget {
+            background-color: transparent;
+            border: none;
+        }
+        
+        QListWidget::item {
+            padding: 8px;
+            margin: 2px 0px;
+            border-radius: 4px;
+        }
+        
+        QListWidget::item:selected {
+            background-color: #e3f2fd;
+        }
+        
+        QListWidget::item:hover {
+            background-color: #f5f5f5;
+        }
+    """
+    
+    current_style = self.styleSheet()
     self.setStyleSheet(current_style + additional_styles)
+
+def show_application_users(self, current_item):
+    if not current_item:
+        return
+
+    # Clear previous users
+    for i in reversed(range(self.users_layout.count())):
+        widget = self.users_layout.itemAt(i).widget()
+        if widget:
+            widget.setParent(None)
+
+    # Get users for selected application
+    app_name = current_item.data(Qt.ItemDataRole.UserRole)
+    app_data = self.df[self.df['application_name'] == app_name].iloc[0]
+    users = app_data['sids'].split(',')
+
+    # Add user tags with alternating colors
+    for i, user in enumerate(users):
+        if user.strip():
+            tag, remove_btn = self.create_sid_tag(user.strip())
+            # Set alternating background colors
+            if i % 2 == 0:
+                tag.setStyleSheet("""
+                    QFrame#sidTag {
+                        background-color: #e3f2fd;
+                        border: 1px solid #bbdefb;
+                    }
+                    QFrame#sidTag:hover {
+                        background-color: #bbdefb;
+                        border-color: #90caf9;
+                    }
+                """)
+            else:
+                tag.setStyleSheet("""
+                    QFrame#sidTag {
+                        background-color: #f3f9ff;
+                        border: 1px solid #bbdefb;
+                    }
+                    QFrame#sidTag:hover {
+                        background-color: #bbdefb;
+                        border-color: #90caf9;
+                    }
+                """)
+            
+            remove_btn.clicked.connect(
+                lambda checked, u=user, a=app_name: self.remove_user(u, a))
+            self.users_layout.addWidget(tag)
