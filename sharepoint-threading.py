@@ -132,3 +132,39 @@ class SharePointAPI:
         while not self.response_queue.empty():
             results.append(self.response_queue.get())
         return results
+
+
+# Initialize SharePoint API
+sharepoint = SharePointAPI(
+    site_url="https://your-sharepoint-site.com",
+    username="your_username",
+    password="your_password"
+)
+
+# Start worker threads
+sharepoint.start_workers(num_threads=3)
+
+try:
+    # Queue multiple operations
+    sharepoint.queue_operation('get', list_name='YourList')
+    
+    sharepoint.queue_operation('add', list_name='YourList', 
+                             item_data={'Title': 'New Item', 
+                                      'Description': 'Added via threading'})
+    
+    sharepoint.queue_operation('update', list_name='YourList',
+                             item_id=1,
+                             item_data={'Title': 'Updated Item'})
+
+    # Wait for operations to complete
+    time.sleep(2)  # Give some time for operations to process
+
+    # Get results
+    results = sharepoint.get_results()
+    for operation, result in results:
+        print(f"Operation: {operation}")
+        print(f"Result: {result}\n")
+
+finally:
+    # Clean up
+    sharepoint.stop_workers()
