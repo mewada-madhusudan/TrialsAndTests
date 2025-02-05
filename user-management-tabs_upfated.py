@@ -1,27 +1,48 @@
 from PyQt6.QtWidgets import (QProgressDialog, QMessageBox)
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QThread, QObject, pyqtSignal
 import asyncio
 import aiohttp
 
-async def verify_user_id(session, user_id):
-    """
-    Verify a single user ID using the API
-    Replace the URL and any necessary headers/auth for your API
-    """
-    try:
-        async with session.get(f'YOUR_API_URL/verify/{user_id}') as response:
-            return user_id, response.status == 200
-    except:
-        return user_id, False
+class VerificationWorker(QObject):
+    finished = pyqtSignal(dict)
+    
+    def __init__(self, user_ids):
+        super().__init__()
+        self.user_ids = user_ids
 
-async def verify_multiple_ids(user_ids):
-    """
-    Verify multiple user IDs concurrently
-    """
-    async with aiohttp.ClientSession() as session:
-        tasks = [verify_user_id(session, uid) for uid in user_ids]
-        results = await asyncio.gather(*tasks)
-        return {uid: is_valid for uid, is_valid in results}
+    async def verify_user_id(self, session, user_id):
+        """
+        Verify a single user ID using the API
+        Replace the URL and any necessary headers/auth for your API
+        """
+        try:
+            # Replace with your actual API endpoint
+            async with session.get(f'YOUR_API_URL/verify/{user_id}') as response:
+                return user_id, response.status == 200
+        except:
+            return user_id, False
+
+    async def verify_multiple_ids(self):
+        """
+        Verify multiple user IDs concurrently
+        """
+        async with aiohttp.ClientSession() as session:
+            tasks = [self.verify_user_id(session, uid) for uid in self.user_ids]
+            results = await asyncio.gather(*tasks)
+            return {uid: is_valid for uid, is_valid in results}
+
+    def run(self):
+        """
+        Run the verification process
+        """
+        async def run_async():
+            results = await self.verify_multiple_ids()
+            self.finished.emit(results)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(run_async())
+        loop.close()
 
 def add_multiple_users(self):
     if not self.app_list.currentItem():
@@ -43,42 +64,51 @@ def add_multiple_users(self):
         return
 
     # Create progress dialog
-    progress = QProgressDialog("Verifying user IDs...", None, 0, 0, self)
-    progress.setWindowTitle("Please Wait")
-    progress.setWindowModality(Qt.WindowModality.WindowModal)
-    progress.show()
+    self.progress = QProgressDialog("Verifying user IDs...", None, 0, 0, self)
+    self.progress.setWindowTitle("Please Wait")
+    self.progress.setWindowModality(Qt.WindowModality.WindowModal)
+    self.progress.show()
 
-    def handle_verification_complete(future):
-        progress.close()
-        verification_results = future.result()
-        
-        valid_ids = {uid for uid, is_valid in verification_results.items() if is_valid}
-        invalid_ids = {uid for uid, is_valid in verification_results.items() if not is_valid}
+    # Create worker thread
+    self.thread = QThread()
+    self.worker = VerificationWorker(new_users_list)
+    self.worker.moveToThread(self.thread)
 
-        if invalid_ids:
-            # Keep invalid IDs in the text edit
-            self.new_users_text.setPlainText('\n'.join(invalid_ids))
-            QMessageBox.warning(
-                self,
-                "Invalid IDs Found",
-                f"The following IDs could not be verified and were not added:\n\n{', '.join(invalid_ids)}",
-                QMessageBox.StandardButton.Ok
-            )
+    # Connect signals
+    self.thread.started.connect(self.worker.run)
+    self.worker.finished.connect(self.handle_verification_complete)
+    self.worker.finished.connect(self.thread.quit)
+    self.worker.finished.connect(self.worker.deleteLater)
+    self.thread.finished.connect(self.thread.deleteLater)
 
-        if valid_ids:
-            # Add verified IDs to the DataFrame
-            app_name = self.app_list.currentItem().data(Qt.ItemDataRole.UserRole)
-            app_idx = self.df[self.df['application_name'] == app_name].index[0]
-            current_sids = set(self.df.at[app_idx, 'sids'].split(','))
-            updated_sids = current_sids.union(valid_ids)
-            self.df.at[app_idx, 'sids'] = ','.join(updated_sids)
-            self.show_application_users(self.app_list.currentItem())
-            self.show_success_message(f"Successfully added {len(valid_ids)} verified user(s)")
+    # Start the thread
+    self.thread.start()
 
-    # Run verification in a separate thread to avoid blocking the UI
-    loop = asyncio.new_event_loop()
-    future = asyncio.run_coroutine_threadsafe(
-        verify_multiple_ids(new_users_list),
-        loop
-    )
-    future.add_done_callback(handle_verification_complete)
+def handle_verification_complete(self, verification_results):
+    """
+    Handle the completion of ID verification
+    """
+    self.progress.close()
+    
+    valid_ids = {uid for uid, is_valid in verification_results.items() if is_valid}
+    invalid_ids = {uid for uid, is_valid in verification_results.items() if not is_valid}
+
+    if invalid_ids:
+        # Keep invalid IDs in the text edit
+        self.new_users_text.setPlainText('\n'.join(invalid_ids))
+        QMessageBox.warning(
+            self,
+            "Invalid IDs Found",
+            f"The following IDs could not be verified and were not added:\n\n{', '.join(invalid_ids)}",
+            QMessageBox.StandardButton.Ok
+        )
+
+    if valid_ids:
+        # Add verified IDs to the DataFrame
+        app_name = self.app_list.currentItem().data(Qt.ItemDataRole.UserRole)
+        app_idx = self.df[self.df['application_name'] == app_name].index[0]
+        current_sids = set(self.df.at[app_idx, 'sids'].split(','))
+        updated_sids = current_sids.union(valid_ids)
+        self.df.at[app_idx, 'sids'] = ','.join(updated_sids)
+        self.show_application_users(self.app_list.currentItem())
+        self.show_success_message(f"Successfully added {len(valid_ids)} verified user(s)")
