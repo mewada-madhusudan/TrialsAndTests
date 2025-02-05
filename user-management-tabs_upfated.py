@@ -1,143 +1,27 @@
-def setup_user_management(self, users_container):
-    users_layout = QVBoxLayout(users_container)
-    users_layout.setContentsMargins(20, 20, 20, 20)
+from PyQt6.QtWidgets import (QProgressDialog, QMessageBox)
+from PyQt6.QtCore import Qt, QTimer
+import asyncio
+import aiohttp
 
-    # Title
-    users_title = QLabel("Manage Users")
-    users_title.setProperty("heading", True)
-    users_layout.addWidget(users_title)
+async def verify_user_id(session, user_id):
+    """
+    Verify a single user ID using the API
+    Replace the URL and any necessary headers/auth for your API
+    """
+    try:
+        async with session.get(f'YOUR_API_URL/verify/{user_id}') as response:
+            return user_id, response.status == 200
+    except:
+        return user_id, False
 
-    # Tab widget
-    tab_widget = QTabWidget()
-    tab_widget.setStyleSheet("""
-        QTabWidget::pane {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            background: white;
-            padding: 10px;
-        }
-        QTabBar::tab {
-            background: #f5f5f5;
-            border: 1px solid #e0e0e0;
-            padding: 8px 16px;
-            margin-right: 2px;
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
-        }
-        QTabBar::tab:selected {
-            background: white;
-            border-bottom-color: white;
-        }
-    """)
-
-    # Existing Users Tab
-    existing_users_tab = QWidget()
-    existing_layout = QVBoxLayout(existing_users_tab)
-    
-    existing_label = QLabel("Select users to remove access:")
-    existing_label.setProperty("subheading", True)
-    existing_layout.addWidget(existing_label)
-
-    self.existing_users_list = QListWidget()
-    self.existing_users_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-    self.existing_users_list.setStyleSheet("""
-        QListWidget {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 8px;
-            background: white;
-        }
-        QListWidget::item {
-            padding: 8px;
-            border-bottom: 1px solid #f0f0f0;
-        }
-        QListWidget::item:selected {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-    """)
-    existing_layout.addWidget(self.existing_users_list)
-
-    remove_btn = QPushButton("Remove Selected Users")
-    remove_btn.setObjectName("actionButton")
-    remove_btn.clicked.connect(self.remove_selected_users)
-    existing_layout.addWidget(remove_btn)
-
-    # Add Users Tab
-    add_users_tab = QWidget()
-    add_layout = QVBoxLayout(add_users_tab)
-    
-    add_label = QLabel("Enter user IDs (one per line):")
-    add_label.setProperty("subheading", True)
-    add_layout.addWidget(add_label)
-
-    # Replace QTextEdit with QListWidget for consistent look
-    self.new_users_list = QListWidget()
-    self.new_users_list.setStyleSheet("""
-        QListWidget {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 8px;
-            background: white;
-        }
-        QListWidget::item {
-            padding: 8px;
-            border-bottom: 1px solid #f0f0f0;
-        }
-    """)
-    add_layout.addWidget(self.new_users_list)
-
-    # Add input field for single user
-    input_layout = QHBoxLayout()
-    self.user_input = QLineEdit()
-    self.user_input.setPlaceholderText("Enter user ID")
-    self.user_input.setStyleSheet("""
-        QLineEdit {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 8px;
-            background: white;
-        }
-    """)
-    input_layout.addWidget(self.user_input)
-
-    add_single_btn = QPushButton("Add")
-    add_single_btn.setObjectName("actionButton")
-    add_single_btn.clicked.connect(self.add_single_user)
-    input_layout.addWidget(add_single_btn)
-    add_layout.addLayout(input_layout)
-
-    # Add paste button
-    paste_btn = QPushButton("Paste Multiple Users")
-    paste_btn.setObjectName("actionButton")
-    paste_btn.clicked.connect(self.paste_multiple_users)
-    add_layout.addWidget(paste_btn)
-
-    add_btn = QPushButton("Add All Users")
-    add_btn.setObjectName("actionButton")
-    add_btn.clicked.connect(self.add_multiple_users)
-    add_layout.addWidget(add_btn)
-
-    # Add tabs to widget
-    tab_widget.addTab(existing_users_tab, "Existing Users")
-    tab_widget.addTab(add_users_tab, "Add Users")
-    users_layout.addWidget(tab_widget)
-
-def add_single_user(self):
-    user_id = self.user_input.text().strip()
-    if user_id:
-        self.new_users_list.addItem(user_id)
-        self.user_input.clear()
-
-def paste_multiple_users(self):
-    clipboard = QApplication.clipboard()
-    text = clipboard.text()
-    if text:
-        # Split by newlines and commas, then clean up
-        for line in text.split('\n'):
-            for uid in line.split(','):
-                if uid.strip():
-                    self.new_users_list.addItem(uid.strip())
+async def verify_multiple_ids(user_ids):
+    """
+    Verify multiple user IDs concurrently
+    """
+    async with aiohttp.ClientSession() as session:
+        tasks = [verify_user_id(session, uid) for uid in user_ids]
+        results = await asyncio.gather(*tasks)
+        return {uid: is_valid for uid, is_valid in results}
 
 def add_multiple_users(self):
     if not self.app_list.currentItem():
@@ -146,20 +30,55 @@ def add_multiple_users(self):
                           QMessageBox.StandardButton.Ok)
         return
 
+    new_users = self.new_users_text.toPlainText().strip()
+    if not new_users:
+        return
+
+    # Split by newlines and commas, then clean up
     new_users_list = set()
-    for i in range(self.new_users_list.count()):
-        new_users_list.add(self.new_users_list.item(i).text())
+    for line in new_users.split('\n'):
+        new_users_list.update(uid.strip() for uid in line.split(',') if uid.strip())
 
     if not new_users_list:
         return
 
-    app_name = self.app_list.currentItem().data(Qt.ItemDataRole.UserRole)
-    app_idx = self.df[self.df['application_name'] == app_name].index[0]
-    
-    current_sids = set(self.df.at[app_idx, 'sids'].split(','))
-    updated_sids = current_sids.union(new_users_list)
-    
-    self.df.at[app_idx, 'sids'] = ','.join(updated_sids)
-    self.new_users_list.clear()
-    self.show_application_users(self.app_list.currentItem())
-    self.show_success_message(f"Successfully added {len(new_users_list)} new user(s)")
+    # Create progress dialog
+    progress = QProgressDialog("Verifying user IDs...", None, 0, 0, self)
+    progress.setWindowTitle("Please Wait")
+    progress.setWindowModality(Qt.WindowModality.WindowModal)
+    progress.show()
+
+    def handle_verification_complete(future):
+        progress.close()
+        verification_results = future.result()
+        
+        valid_ids = {uid for uid, is_valid in verification_results.items() if is_valid}
+        invalid_ids = {uid for uid, is_valid in verification_results.items() if not is_valid}
+
+        if invalid_ids:
+            # Keep invalid IDs in the text edit
+            self.new_users_text.setPlainText('\n'.join(invalid_ids))
+            QMessageBox.warning(
+                self,
+                "Invalid IDs Found",
+                f"The following IDs could not be verified and were not added:\n\n{', '.join(invalid_ids)}",
+                QMessageBox.StandardButton.Ok
+            )
+
+        if valid_ids:
+            # Add verified IDs to the DataFrame
+            app_name = self.app_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            app_idx = self.df[self.df['application_name'] == app_name].index[0]
+            current_sids = set(self.df.at[app_idx, 'sids'].split(','))
+            updated_sids = current_sids.union(valid_ids)
+            self.df.at[app_idx, 'sids'] = ','.join(updated_sids)
+            self.show_application_users(self.app_list.currentItem())
+            self.show_success_message(f"Successfully added {len(valid_ids)} verified user(s)")
+
+    # Run verification in a separate thread to avoid blocking the UI
+    loop = asyncio.new_event_loop()
+    future = asyncio.run_coroutine_threadsafe(
+        verify_multiple_ids(new_users_list),
+        loop
+    )
+    future.add_done_callback(handle_verification_complete)
