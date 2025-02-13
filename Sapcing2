@@ -1,127 +1,199 @@
-class AppTileWidget(QFrame):
-    def __init__(self, name, description, parent=None):
+from datetime import datetime
+import re
+
+class FormValidator:
+    @staticmethod
+    def validate_text(text):
+        """Validate text field is not empty and contains valid characters"""
+        return bool(text and text.strip() and not re.search(r'[<>]', text))
+
+    @staticmethod
+    def validate_date(date_str):
+        """Validate date in DD-MM-YYYY format"""
+        try:
+            if not date_str:
+                return True  # Optional field
+            datetime.strptime(date_str, '%d-%m-%Y')
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def validate_version(version):
+        """Validate version is a valid float"""
+        try:
+            if not version:
+                return True  # Optional field
+            float(version)
+            return True
+        except ValueError:
+            return False
+
+class ValidatingLineEdit(QLineEdit):
+    def __init__(self, validation_type, required=False, parent=None):
         super().__init__(parent)
-        self.setObjectName("appTile")
-        # Set fixed size for the widget
-        self.setFixedSize(280, 100)  # Width: 280px, Height: 100px
-        self.is_selected = False
-        self.setup_ui(name, description)
+        self.validation_type = validation_type
+        self.required = required
+        self.valid = True
+        self.textChanged.connect(self.on_text_changed)
         
-    def setup_ui(self, name, description):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(4)
+        # Store original stylesheet
+        self.default_style = """
+            QLineEdit {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 8px;
+                background: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid #1976d2;
+            }
+        """
+        self.error_style = """
+            QLineEdit {
+                border: 1px solid #f44336;
+                border-radius: 4px;
+                padding: 8px;
+                background: #fff8f8;
+            }
+        """
+        self.setStyleSheet(self.default_style)
 
-        # App icon/emoji (placeholder)
-        icon_label = QLabel("🔹")
-        icon_label.setProperty("appIcon", True)
-        icon_label.setFixedWidth(20)
-
-        # App name with icon in horizontal layout
-        name_layout = QHBoxLayout()
-        name_layout.setSpacing(8)
-        name_layout.addWidget(icon_label)
-
-        name_label = QLabel(name)
-        name_label.setProperty("appName", True)
-        name_label.setWordWrap(True)
-        # Ensure text is elided if too long
-        name_label.setMaximumWidth(230)  # Account for icon and margins
-        name_layout.addWidget(name_label)
-        name_layout.addStretch()
-
-        # Description
-        desc_label = QLabel(description)
-        desc_label.setProperty("appDescription", True)
-        desc_label.setWordWrap(True)
-        # Limit description width
-        desc_label.setMaximumWidth(250)  # Account for margins
-
-        layout.addLayout(name_layout)
-        layout.addWidget(desc_label)
-        layout.addStretch()
+    def validate(self):
+        text = self.text().strip()
         
-    def set_selected(self, selected):
-        self.is_selected = selected
-        self.setProperty("selected", selected)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
+        # Check if field is required and empty
+        if self.required and not text:
+            self.set_invalid()
+            return False
 
-    def sizeHint(self):
-        # Return fixed size
-        return QSize(280, 100)
+        # If field is optional and empty, it's valid
+        if not self.required and not text:
+            self.set_valid()
+            return True
 
-# Update the app_list setup in AccessControlDialog's setup_right_panel method
+        # Validate based on type
+        if self.validation_type == 'text':
+            valid = FormValidator.validate_text(text)
+        elif self.validation_type == 'date':
+            valid = FormValidator.validate_date(text)
+        elif self.validation_type == 'version':
+            valid = FormValidator.validate_version(text)
+        else:
+            valid = True
+
+        if valid:
+            self.set_valid()
+        else:
+            self.set_invalid()
+        return valid
+
+    def set_valid(self):
+        self.valid = True
+        self.setStyleSheet(self.default_style)
+
+    def set_invalid(self):
+        self.valid = False
+        self.setStyleSheet(self.error_style)
+
+    def on_text_changed(self):
+        """Reset validation state when user starts typing"""
+        if not self.valid:
+            self.setStyleSheet(self.default_style)
+
+# Modify the setup_right_panel method in AccessControlDialog
 def setup_right_panel(self):
-    # ... (previous code remains the same until app_list setup)
+    # ... (previous setup code remains the same until fields definition)
 
-    # Configure the app_list for fixed spacing
-    self.app_list = QListWidget()
-    self.app_list.setSpacing(10)  # Exactly 10px spacing between items
-    self.app_list.setResizeMode(QListWidget.ResizeMode.Fixed)
-    self.app_list.setViewMode(QListWidget.ViewMode.ListMode)
-    self.app_list.setUniformItemSizes(True)  # All items same size
-    self.app_list.setStyleSheet("""
-        QListWidget {
-            background-color: #f5f5f5;
-            border: none;
-            border-radius: 0px;
-            padding: 10px;
-        }
-        QListWidget::item {
-            padding: 0px;
-            margin: 0px;
-            border: none;
-            background-color: transparent;
-        }
-    """)
+    fields = [
+        ("application_name", "Application Name", "Enter the name of the application", "text", True),
+        ("description", "Application Description", "Enter a brief description", "text", True),
+        ("exe_path", "Executable Path", "Enter the full path to the executable", "text", True),
+        ("lob", "Line of Business", "Enter the business unit or department", "text", True),
+        ("version", "Version", "Enter application version (e.g., 1.0)", "version", False),
+        ("owner", "Owner", "Enter application owner", "text", True),
+        ("support_contact", "Support Contact", "Enter support contact information", "text", False),
+        ("deployment_date", "Deployment Date", "Enter deployment date (DD-MM-YYYY)", "date", False),
+        ("last_update", "Last Update Date", "Enter last update date (DD-MM-YYYY)", "date", False),
+        ("status", "Status", "Enter application status", "text", True),
+        ("environment", "Environment", "Enter deployment environment", "text", True),
+        ("dependencies", "Dependencies", "Enter application dependencies", "text", False),
+        ("backup_location", "Backup Location", "Enter backup location", "text", False),
+        ("sids", "Security IDs", "Enter comma-separated security IDs", "text", True)
+    ]
 
-def update_app_list(self):
-    self.app_list.clear()
-    for _, row in self.df.iterrows():
-        item = QListWidgetItem(self.app_list)
-        tile_widget = AppTileWidget(row['application_name'], row['description'])
-        # Set fixed size for list item
-        item.setSizeHint(QSize(280, 100))
-        self.app_list.setItemWidget(item, tile_widget)
-        item.setData(Qt.ItemDataRole.UserRole, row['application_name'])
+    self.add_app_fields = {}
+    for field_name, label_text, placeholder, validation_type, required in fields:
+        field_layout = QVBoxLayout()
+        field_layout.setSpacing(6)
+
+        label = QLabel(label_text + (" *" if required else ""))
+        label.setProperty("fieldLabel", True)
+        
+        line_edit = ValidatingLineEdit(validation_type, required)
+        line_edit.setPlaceholderText(placeholder)
+        line_edit.setProperty("formInput", True)
+
+        self.add_app_fields[field_name] = line_edit
+        field_layout.addWidget(label)
+        field_layout.addWidget(line_edit)
+
+        add_layout.addLayout(field_layout)
+
+def save_application(self):
+    # Validate all fields
+    all_valid = True
+    for field_name, input_widget in self.add_app_fields.items():
+        if not input_widget.validate():
+            all_valid = False
+
+    if not all_valid:
+        QMessageBox.warning(
+            self,
+            "Validation Error",
+            "Please check the form for errors:\n\n" +
+            "• Required fields must not be empty\n" +
+            "• Dates must be in DD-MM-YYYY format\n" +
+            "• Version must be a valid number",
+            QMessageBox.StandardButton.Ok
+        )
+        return
+
+    # Proceed with saving if all validations pass
+    is_update_mode = self.update_mode_checkbox.isChecked()
     
-    self.app_list.itemSelectionChanged.connect(self.handle_selection_changed)
+    # Collect form data
+    new_data = {field: widget.text().strip() for field, widget in self.add_app_fields.items()}
+    
+    if is_update_mode:
+        # Update existing application
+        app_name = self.app_select_combo.currentText()
+        idx = self.df[self.df['application_name'] == app_name].index[0]
+        for field, value in new_data.items():
+            if field in self.df.columns:
+                self.df.at[idx, field] = value
+    else:
+        # Add new application
+        self.df = pd.concat([self.df, pd.DataFrame([new_data])], ignore_index=True)
 
-# Update the styles
+    # Update UI
+    self.update_app_list()
+    self.clear_form()
+    
+    # Show success message
+    action = "updated" if is_update_mode else "added"
+    self.show_success_message(f"Application has been {action} successfully!")
+
+# Add these styles to your apply_styles method
 def apply_styles(self):
-    # Add this to your existing stylesheet
     additional_styles = """
-        QFrame#appTile[selected="true"] {
-            background-color: #e3f2fd;
-            border: 1px solid #1976d2;
+        QLabel[fieldLabel="true"] {
+            color: #333;
+            font-weight: 500;
         }
-        QFrame#appTile[selected="true"]:hover {
-            background-color: #e3f2fd;
-            border: 1px solid #1565c0;
-        }
-        QFrame#appTile {
-            background-color: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            margin: 0px;  /* Remove margins since spacing is handled by list */
-        }
-        QFrame#appTile:hover {
-            background-color: #f8f9fa;
-            border: 1px solid #1976d2;
-        }
-        QLabel[appName="true"] {
-            font-size: 14px;
-            font-weight: bold;
-            color: #1976d2;
-            margin-bottom: 2px;
-            line-height: 1.2;
-        }
-        QLabel[appDescription="true"] {
-            font-size: 12px;
-            color: #666;
-            line-height: 1.3;
+        QLabel[required="true"]::after {
+            content: " *";
+            color: #f44336;
         }
     """
     current_style = self.styleSheet()
