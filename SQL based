@@ -1,0 +1,109 @@
+import sqlite3
+import time
+from contextlib import contextmanager
+from pathlib import Path
+
+class LauncherDB:
+    def __init__(self, db_path):
+        self.db_path = Path(db_path)
+        self._setup_database()
+
+    def _setup_database(self):
+        """Initialize the database with WAL mode and other optimizations"""
+        conn = self._connect()
+        try:
+            # Enable WAL mode for better concurrent access
+            conn.execute('PRAGMA journal_mode=WAL')
+            # Set a smaller timeout for busy situations
+            conn.execute('PRAGMA busy_timeout=5000')
+            # Enable foreign keys
+            conn.execute('PRAGMA foreign_keys=ON')
+            
+            # Create tables if they don't exist
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS applications (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    exe_path TEXT NOT NULL,
+                    description TEXT,
+                    lob TEXT,
+                    version TEXT,
+                    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS user_access (
+                    user_sid TEXT,
+                    app_id INTEGER,
+                    granted_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_sid, app_id),
+                    FOREIGN KEY (app_id) REFERENCES applications(id)
+                );
+
+                -- Add indexes for better performance
+                CREATE INDEX IF NOT EXISTS idx_user_access_sid 
+                ON user_access(user_sid);
+            ''')
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _connect(self):
+        """Create a new database connection with retry logic"""
+        max_attempts = 3
+        attempt = 0
+        last_error = None
+
+        while attempt < max_attempts:
+            try:
+                conn = sqlite3.connect(self.db_path, timeout=20)
+                return conn
+            except sqlite3.OperationalError as e:
+                last_error = e
+                attempt += 1
+                time.sleep(1)  # Wait before retrying
+        
+        raise ConnectionError(f"Failed to connect to database after {max_attempts} attempts: {last_error}")
+
+    @contextmanager
+    def get_connection(self):
+        """Context manager for database connections with retry logic"""
+        conn = self._connect()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def get_user_applications(self, user_sid):
+        """Get all applications available to a user"""
+        query = '''
+            SELECT a.* FROM applications a
+            JOIN user_access ua ON a.id = ua.app_id
+            WHERE ua.user_sid = ?
+        '''
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(query, (user_sid,))
+            return cursor.fetchall()
+
+    def add_application(self, name, exe_path, description=None, lob=None, version=None):
+        """Add a new application with retry logic"""
+        query = '''
+            INSERT INTO applications (name, exe_path, description, lob, version)
+            VALUES (?, ?, ?, ?, ?)
+        '''
+        
+        with self.get_connection() as conn:
+            cursor = conn.execute(query, (name, exe_path, description, lob, version))
+            conn.commit()
+            return cursor.lastrowid
+
+    def grant_access(self, user_sid, app_id):
+        """Grant access to a user for an application"""
+        query = '''
+            INSERT OR IGNORE INTO user_access (user_sid, app_id)
+            VALUES (?, ?)
+        '''
+        
+        with self.get_connection() as conn:
+            conn.execute(query, (user_sid, app_id))
+            conn.commit()
