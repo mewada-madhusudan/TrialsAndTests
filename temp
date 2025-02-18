@@ -1,142 +1,62 @@
-import json
-import os
-import sys
-
-import pandas as pd
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-                             QLabel, QLineEdit, QTableWidget, QTableWidgetItem,
-                             QMessageBox, QHeaderView, QWidget, QStackedWidget,
-                             QFrame, QScrollArea, QListWidget, QApplication, 
-                             QMainWindow, QStatusBar, QComboBox)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QIcon
-
-# ... [Previous MainWindow class remains the same] ...
+# [Previous imports and MainWindow class remain the same...]
 
 class AccessControlDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Access Control Management")
-        self.setMinimumSize(1200, 700)
-        
-        # Initialize sample DataFrames
-        self.df = pd.DataFrame({
-            'application_name': ['App1', 'App2', 'App3'],
-            'exe_path': ['/path1', '/path2', '/path3'],
-            'lob': ['LOB1', 'LOB2', 'LOB1'],
-            'sids': ['SID1,SID2', 'SID3', 'SID4,SID5,SID6']
-        })
-        
-        # Initialize STO tables
-        self.status_table = pd.DataFrame({
-            'status_id': ['S1', 'S2', 'S3'],
-            'status_name': ['Active', 'Pending', 'Completed'],
-            'description': ['Active status', 'Pending approval', 'Completed tasks']
-        })
-        
-        self.field_table = pd.DataFrame({
-            'field_id': ['F1', 'F2', 'F3'],
-            'field_name': ['Priority', 'Category', 'Department'],
-            'field_type': ['Integer', 'String', 'String']
-        })
-        
-        self.setup_ui()
-        
-    def setup_ui(self):
-        # Main layout with spacing
-        main_layout = QHBoxLayout(self)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        
-        # Left panel setup
-        left_panel = self.setup_left_panel()
-        main_layout.addWidget(left_panel, 1)
-        
-        # Right panel setup
-        self.right_stack = QStackedWidget()
-        self.setup_right_panel()
-        main_layout.addWidget(self.right_stack, 2)
-        
-        # Apply modern styling
-        self.apply_styles()
-
-    def setup_left_panel(self):
-        left_frame = QFrame()
-        layout = QVBoxLayout(left_frame)
-        layout.setSpacing(15)
-        
-        # Title with icon
-        title = QLabel("Access Control")
-        title.setProperty("heading", True)
-        layout.addWidget(title)
-        
-        # Option buttons with icons and descriptions
-        buttons_frame = QFrame()
-        buttons_layout = QVBoxLayout(buttons_frame)
-        buttons_layout.setSpacing(15)
-        
-        # Add Application button
-        add_app_container = QVBoxLayout()
-        self.add_app_btn = QPushButton("Add New Application")
-        add_app_desc = QLabel("Register a new application and set initial access permissions")
-        add_app_desc.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        add_app_container.addWidget(self.add_app_btn)
-        add_app_container.addWidget(add_app_desc)
-        
-        # Manage Access button
-        manage_access_container = QVBoxLayout()
-        self.manage_access_btn = QPushButton("Manage User Access")
-        manage_access_desc = QLabel("Control user permissions for existing applications")
-        manage_access_desc.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        manage_access_container.addWidget(self.manage_access_btn)
-        manage_access_container.addWidget(manage_access_desc)
-        
-        # STO Panel button
-        sto_panel_container = QVBoxLayout()
-        self.sto_panel_btn = QPushButton("STO Panel")
-        sto_panel_desc = QLabel("Manage Status, Field, and other STO tables")
-        sto_panel_desc.setStyleSheet("color: #7f8c8d; font-size: 12px;")
-        sto_panel_container.addWidget(self.sto_panel_btn)
-        sto_panel_container.addWidget(sto_panel_desc)
-        
-        buttons_layout.addLayout(add_app_container)
-        buttons_layout.addLayout(manage_access_container)
-        buttons_layout.addLayout(sto_panel_container)
-        buttons_layout.addStretch()
-        
-        layout.addWidget(buttons_frame)
-        
-        # Connect button signals
-        self.add_app_btn.clicked.connect(lambda: self.switch_panel(0))
-        self.manage_access_btn.clicked.connect(lambda: self.switch_panel(1))
-        self.sto_panel_btn.clicked.connect(lambda: self.switch_panel(2))
-        
-        layout.addStretch()
-        return left_frame
-
-    def setup_right_panel(self):
-        # Add existing panels
-        self.setup_add_application_panel()
-        self.setup_manage_access_panel()
-        
-        # Add new STO panel
-        self.setup_sto_panel()
+    # [Previous __init__ and other methods remain the same until setup_sto_panel...]
 
     def setup_sto_panel(self):
         sto_widget = QFrame()
         layout = QVBoxLayout(sto_widget)
         layout.setSpacing(20)
         
-        # Title
+        # Title with enhanced styling
         title = QLabel("STO Table Management")
         title.setProperty("heading", True)
         layout.addWidget(title)
         
-        # Table selection
+        # Table selection with modern styling
         table_select_frame = QFrame()
+        table_select_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+            }
+            QComboBox {
+                border: 2px solid #e0e0e0;
+                border-radius: 6px;
+                padding: 8px 15px;
+                min-width: 200px;
+                background-color: white;
+                font-size: 14px;
+            }
+            QComboBox:focus {
+                border-color: #4a90e2;
+            }
+            QComboBox::drop-down {
+                border: none;
+                padding-right: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #666;
+                margin-right: 10px;
+            }
+        """)
+        
         table_select_layout = QHBoxLayout(table_select_frame)
+        table_select_layout.setContentsMargins(15, 10, 15, 10)
         
         table_label = QLabel("Select Table:")
+        table_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #2c3e50;
+            }
+        """)
+        
         self.table_combo = QComboBox()
         self.table_combo.addItems(["Status Table", "Field Table"])
         self.table_combo.currentTextChanged.connect(self.show_selected_table)
@@ -147,35 +67,113 @@ class AccessControlDialog(QDialog):
         
         layout.addWidget(table_select_frame)
         
-        # Table display area
+        # Table container with shadow effect
+        table_container = QFrame()
+        table_container.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+            }
+        """)
+        table_container_layout = QVBoxLayout(table_container)
+        
+        # Enhanced table styling
         self.table_widget = QTableWidget()
         self.table_widget.setStyleSheet("""
             QTableWidget {
-                border: 1px solid #e0e0e0;
-                border-radius: 6px;
+                border: none;
                 background-color: white;
+                gridline-color: #f0f0f0;
             }
             QTableWidget::item {
-                padding: 5px;
+                padding: 10px;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            QTableWidget::item:selected {
+                background-color: #e3f2fd;
+                color: #2c3e50;
             }
             QHeaderView::section {
-                background-color: #f5f6fa;
-                padding: 5px;
+                background-color: #f8f9fa;
+                padding: 12px;
                 border: none;
-                border-right: 1px solid #e0e0e0;
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 2px solid #e0e0e0;
+                font-weight: bold;
+                color: #2c3e50;
+                font-size: 13px;
+            }
+            QTableWidget::item:hover {
+                background-color: #f8f9fa;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #f0f0f0;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #c0c0c0;
+                border-radius: 5px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a0a0a0;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
             }
         """)
-        layout.addWidget(self.table_widget)
         
-        # Buttons container
+        table_container_layout.addWidget(self.table_widget)
+        layout.addWidget(table_container)
+        
+        # Action buttons with modern styling
         buttons_frame = QFrame()
+        buttons_frame.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 8px;
+                padding: 15px;
+            }
+            QPushButton {
+                min-width: 120px;
+                padding: 10px 20px;
+            }
+            QPushButton#addBtn {
+                background-color: #4caf50;
+            }
+            QPushButton#addBtn:hover {
+                background-color: #43a047;
+            }
+            QPushButton#deleteBtn {
+                background-color: #f44336;
+            }
+            QPushButton#deleteBtn:hover {
+                background-color: #e53935;
+            }
+            QPushButton#saveBtn {
+                background-color: #2196f3;
+            }
+            QPushButton#saveBtn:hover {
+                background-color: #1e88e5;
+            }
+        """)
+        
         buttons_layout = QHBoxLayout(buttons_frame)
-        buttons_layout.setSpacing(10)
+        buttons_layout.setSpacing(15)
         
         add_row_btn = QPushButton("Add Row")
+        add_row_btn.setObjectName("addBtn")
+        add_row_btn.setIcon(QIcon.fromTheme("list-add"))
+        
         delete_row_btn = QPushButton("Delete Selected")
+        delete_row_btn.setObjectName("deleteBtn")
+        delete_row_btn.setIcon(QIcon.fromTheme("edit-delete"))
+        
         save_changes_btn = QPushButton("Save Changes")
+        save_changes_btn.setObjectName("saveBtn")
+        save_changes_btn.setIcon(QIcon.fromTheme("document-save"))
         
         add_row_btn.clicked.connect(self.add_table_row)
         delete_row_btn.clicked.connect(self.delete_table_row)
@@ -189,7 +187,7 @@ class AccessControlDialog(QDialog):
         layout.addWidget(buttons_frame)
         
         self.right_stack.addWidget(sto_widget)
-        self.show_selected_table("Status Table")  # Show status table by default
+        self.show_selected_table("Status Table")
 
     def show_selected_table(self, table_name):
         if table_name == "Status Table":
@@ -202,80 +200,26 @@ class AccessControlDialog(QDialog):
         self.table_widget.setColumnCount(len(df.columns))
         self.table_widget.setHorizontalHeaderLabels(df.columns)
         
-        # Populate table
+        # Populate table with improved formatting
         for i, row in df.iterrows():
             for j, value in enumerate(row):
                 item = QTableWidgetItem(str(value))
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table_widget.setItem(i, j, item)
         
-        # Adjust column widths
-        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-
-    def add_table_row(self):
-        current_table = self.table_combo.currentText()
-        row_position = self.table_widget.rowCount()
-        self.table_widget.insertRow(row_position)
+        # Adjust column widths and row heights
+        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table_widget.verticalHeader().setDefaultSectionSize(50)
         
-        # Add empty cells
-        for i in range(self.table_widget.columnCount()):
-            self.table_widget.setItem(row_position, i, QTableWidgetItem(""))
+        # Hide vertical header (row numbers)
+        self.table_widget.verticalHeader().setVisible(False)
+        
+        # Alternate row colors
+        self.table_widget.setAlternatingRowColors(True)
+        self.table_widget.setStyleSheet(self.table_widget.styleSheet() + """
+            QTableWidget {
+                alternate-background-color: #f8f9fa;
+            }
+        """)
 
-    def delete_table_row(self):
-        selected_rows = set(item.row() for item in self.table_widget.selectedItems())
-        if not selected_rows:
-            QMessageBox.warning(self, "No Selection", "Please select a row to delete.")
-            return
-            
-        reply = QMessageBox.question(self, "Confirm Deletion",
-                                   "Are you sure you want to delete the selected row(s)?",
-                                   QMessageBox.StandardButton.Yes |
-                                   QMessageBox.StandardButton.No)
-                                   
-        if reply == QMessageBox.StandardButton.Yes:
-            for row in sorted(selected_rows, reverse=True):
-                self.table_widget.removeRow(row)
-
-    def save_table_changes(self):
-        try:
-            current_table = self.table_combo.currentText()
-            rows = self.table_widget.rowCount()
-            cols = self.table_widget.columnCount()
-            
-            # Get column headers
-            headers = [self.table_widget.horizontalHeaderItem(i).text() 
-                      for i in range(cols)]
-            
-            # Get table data
-            data = []
-            for row in range(rows):
-                row_data = {}
-                for col in range(cols):
-                    item = self.table_widget.item(row, col)
-                    row_data[headers[col]] = item.text() if item else ""
-                data.append(row_data)
-            
-            # Update appropriate DataFrame
-            new_df = pd.DataFrame(data)
-            if current_table == "Status Table":
-                self.status_table = new_df
-            else:  # Field Table
-                self.field_table = new_df
-            
-            QMessageBox.information(self, "Success", 
-                                  "Changes saved successfully!",
-                                  QMessageBox.StandardButton.Ok)
-                                  
-            if isinstance(self.parent(), MainWindow):
-                self.parent().status_bar.showMessage(f"{current_table} updated successfully", 3000)
-                
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to save changes: {e}")
-
-    def switch_panel(self, index):
-        # Update button styles
-        self.add_app_btn.setStyleSheet("" if index != 0 else "background-color: #2d6da3;")
-        self.manage_access_btn.setStyleSheet("" if index != 1 else "background-color: #2d6da3;")
-        self.sto_panel_btn.setStyleSheet("" if index != 2 else "background-color: #2d6da3;")
-        self.right_stack.setCurrentIndex(index)
-
-# ... [Rest of the original code remains the same] ...
+    # [Rest of the methods remain the same...]
