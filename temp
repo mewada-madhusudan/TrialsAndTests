@@ -1,70 +1,90 @@
 import pandas as pd
 import sqlite3
-from typing import List
-import logging
+from datetime import datetime
+from typing import Union
 
-def upsert_dataframe(df: pd.DataFrame, 
-                     table_name: str,
-                     unique_columns: List[str],
-                     db_path: str) -> dict:
+def upsert_application_row(row: pd.Series, db_path: str) -> dict:
     """
-    Upsert (insert or replace) DataFrame rows into a SQLite database table.
+    Upsert a single row into the applications table, handling auto-increment ID
+    and timestamp columns automatically.
     
     Parameters:
     -----------
-    df : pandas.DataFrame
-        DataFrame containing the rows to upsert
-    table_name : str
-        Name of the target database table
-    unique_columns : List[str]
-        List of column names that uniquely identify a row
+    row : pd.Series
+        Single row from DataFrame containing application data
     db_path : str
         Path to the SQLite database file
         
     Returns:
     --------
     dict
-        Summary of operations performed
+        Summary of operation performed including the ID of the inserted/updated row
     """
     try:
         # Connect to database
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Get the list of columns in the table
-        cursor.execute(f"PRAGMA table_info({table_name})")
-        table_columns = [col[1] for col in cursor.fetchall()]
+        # Get current timestamp
+        current_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Ensure DataFrame columns match table columns
-        df_columns = set(df.columns)
-        table_columns_set = set(table_columns)
-        if not df_columns.issubset(table_columns_set):
-            invalid_columns = df_columns - table_columns_set
-            raise ValueError(f"DataFrame contains columns not in table: {invalid_columns}")
+        # Get the list of all columns in the row
+        row_columns = set(row.index)
         
-        # Create the unique index if it doesn't exist
-        index_name = f"idx_{table_name}_{'_'.join(unique_columns)}"
-        index_columns = ', '.join(unique_columns)
-        cursor.execute(f"""
-            CREATE UNIQUE INDEX IF NOT EXISTS {index_name} 
-            ON {table_name} ({index_columns})
-        """)
+        # Prepare columns and values for the query
+        # Exclude id (auto-increment) and timestamp columns from the input data
+        data_columns = [col for col in row_columns 
+                       if col not in ['id', 'created_at', 'updated_at', 'deleted_at']]
         
-        # Prepare the INSERT OR REPLACE statement
-        columns = ', '.join(df.columns)
-        placeholders = ', '.join(['?' for _ in df.columns])
-        query = f"""
-            INSERT OR REPLACE INTO {table_name} ({columns})
-            VALUES ({placeholders})
-        """
+        if 'id' in row_columns and pd.notna(row['id']):
+            # Update existing record
+            set_clauses = [f"{col} = ?" for col in data_columns]
+            set_clauses.append("updated_at = ?")
+            
+            query = f"""
+                UPDATE applications 
+                SET {', '.join(set_clauses)}
+                WHERE id = ?
+            """
+            
+            # Prepare values for update
+            values = [row[col] for col in data_columns]
+            values.append(current_timestamp)  # for updated_at
+            values.append(row['id'])  # for WHERE clause
+            
+            cursor.execute(query, values)
+            
+            if cursor.rowcount == 0:
+                # If no update occurred, insert as new record
+                columns = data_columns + ['created_at', 'updated_at']
+                placeholders = ', '.join(['?' for _ in columns])
+                
+                query = f"""
+                    INSERT INTO applications ({', '.join(columns)})
+                    VALUES ({placeholders})
+                """
+                
+                values = [row[col] for col in data_columns]
+                values.extend([current_timestamp, current_timestamp])  # for timestamps
+                
+                cursor.execute(query, values)
+        else:
+            # Insert new record
+            columns = data_columns + ['created_at', 'updated_at']
+            placeholders = ', '.join(['?' for _ in columns])
+            
+            query = f"""
+                INSERT INTO applications ({', '.join(columns)})
+                VALUES ({placeholders})
+            """
+            
+            values = [row[col] for col in data_columns]
+            values.extend([current_timestamp, current_timestamp])  # for timestamps
+            
+            cursor.execute(query, values)
         
-        # Convert DataFrame to list of tuples for execution
-        records = df.to_records(index=False)
-        data = [tuple(record) for record in records]
-        
-        # Execute the upsert
-        cursor.executemany(query, data)
-        rows_affected = cursor.rowcount
+        # Get the ID of the inserted/updated record
+        row_id = cursor.lastrowid if cursor.lastrowid else row.get('id')
         
         # Commit and close
         conn.commit()
@@ -72,8 +92,8 @@ def upsert_dataframe(df: pd.DataFrame,
         
         return {
             'status': 'success',
-            'rows_affected': rows_affected,
-            'message': f'Successfully upserted {rows_affected} rows'
+            'id': row_id,
+            'message': f'Successfully upserted row with ID {row_id}'
         }
         
     except Exception as e:
@@ -81,53 +101,34 @@ def upsert_dataframe(df: pd.DataFrame,
             conn.close()
         return {
             'status': 'error',
-            'rows_affected': 0,
+            'id': None,
             'message': f'Error during upsert: {str(e)}'
         }
 
-def get_existing_records(db_path: str, 
-                        table_name: str, 
-                        unique_columns: List[str], 
-                        df: pd.DataFrame) -> pd.DataFrame:
+def get_application_by_id(db_path: str, app_id: int) -> Union[pd.Series, None]:
     """
-    Get existing records from SQLite database that match the DataFrame's unique columns.
+    Retrieve an application record by its ID.
     
     Parameters:
     -----------
     db_path : str
         Path to the SQLite database file
-    table_name : str
-        Name of the target database table
-    unique_columns : List[str]
-        List of column names that uniquely identify a row
-    df : pandas.DataFrame
-        DataFrame to check against database
+    app_id : int
+        ID of the application to retrieve
         
     Returns:
     --------
-    pandas.DataFrame
-        Matching records from database
+    pd.Series or None
+        Application record if found, None otherwise
     """
     try:
         conn = sqlite3.connect(db_path)
+        query = "SELECT * FROM applications WHERE id = ?"
         
-        # Create the WHERE clause for unique columns
-        where_conditions = []
-        params = []
-        for col in unique_columns:
-            unique_values = df[col].unique().tolist()
-            placeholders = ','.join(['?' for _ in unique_values])
-            where_conditions.append(f"{col} IN ({placeholders})")
-            params.extend(unique_values)
-        
-        where_clause = ' AND '.join(where_conditions)
-        query = f"SELECT * FROM {table_name} WHERE {where_clause}"
-        
-        # Execute query and return results as DataFrame
-        existing_records = pd.read_sql_query(query, conn, params=params)
+        result = pd.read_sql_query(query, conn, params=[app_id])
         conn.close()
         
-        return existing_records
+        return result.iloc[0] if not result.empty else None
         
     except Exception as e:
         if 'conn' in locals():
