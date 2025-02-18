@@ -1,101 +1,135 @@
-class AppTileWidget(QFrame):
-    def __init__(self, name, description, parent=None):
-        super().__init__(parent)
-        self.setObjectName("appTile")
-        self.setFixedHeight(100)
-        self.is_selected = False
-        self.setup_ui(name, description)
-        
-    def setup_ui(self, name, description):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(4)
+import pandas as pd
+import sqlite3
+from typing import List
+import logging
 
-        # App icon/emoji (placeholder)
-        icon_label = QLabel("🔹")
-        icon_label.setProperty("appIcon", True)
-
-        # App name with icon in horizontal layout
-        name_layout = QHBoxLayout()
-        name_layout.setSpacing(8)
-        name_layout.addWidget(icon_label)
-
-        name_label = QLabel(name)
-        name_label.setProperty("appName", True)
-        name_label.setWordWrap(True)
-        name_layout.addWidget(name_label)
-        name_layout.addStretch()
-
-        # Description
-        desc_label = QLabel(description)
-        desc_label.setProperty("appDescription", True)
-        desc_label.setWordWrap(True)
-
-        layout.addLayout(name_layout)
-        layout.addWidget(desc_label)
-        layout.addStretch()
-        
-    def set_selected(self, selected):
-        self.is_selected = selected
-        if selected:
-            self.setProperty("selected", True)
-        else:
-            self.setProperty("selected", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
-
-# Modify the update_app_list method in AccessControlDialog
-def update_app_list(self):
-    self.app_list.clear()
-    for _, row in self.df.iterrows():
-        item = QListWidgetItem(self.app_list)
-        tile_widget = AppTileWidget(row['application_name'], row['description'])
-        item.setSizeHint(tile_widget.sizeHint())
-        self.app_list.setItemWidget(item, tile_widget)
-        item.setData(Qt.ItemDataRole.UserRole, row['application_name'])
-    
-    # Connect to item selection change
-    self.app_list.itemSelectionChanged.connect(self.handle_selection_changed)
-
-# Add this new method to AccessControlDialog
-def handle_selection_changed(self):
-    # Update all tiles to unselected state first
-    for i in range(self.app_list.count()):
-        item = self.app_list.item(i)
-        tile_widget = self.app_list.itemWidget(item)
-        tile_widget.set_selected(False)
-    
-    # Set the selected state for the current item
-    current_item = self.app_list.currentItem()
-    if current_item:
-        tile_widget = self.app_list.itemWidget(current_item)
-        tile_widget.set_selected(True)
-
-# Add these styles to the apply_styles method in AccessControlDialog
-def apply_styles(self):
-    # Add this to your existing stylesheet
-    additional_styles = """
-        QFrame#appTile[selected="true"] {
-            background-color: #e3f2fd;
-            border: 1px solid #1976d2;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        QFrame#appTile[selected="true"]:hover {
-            background-color: #e3f2fd;
-            border: 1px solid #1565c0;
-        }
-        QFrame#appTile {
-            background-color: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            margin: 4px 8px;
-        }
-        QFrame#appTile:hover {
-            background-color: #f8f9fa;
-            border: 1px solid #1976d2;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
+def upsert_dataframe(df: pd.DataFrame, 
+                     table_name: str,
+                     unique_columns: List[str],
+                     db_path: str) -> dict:
     """
-    current_style = self.styleSheet()
-    self.setStyleSheet(current_style + additional_styles)
+    Upsert (insert or replace) DataFrame rows into a SQLite database table.
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing the rows to upsert
+    table_name : str
+        Name of the target database table
+    unique_columns : List[str]
+        List of column names that uniquely identify a row
+    db_path : str
+        Path to the SQLite database file
+        
+    Returns:
+    --------
+    dict
+        Summary of operations performed
+    """
+    try:
+        # Connect to database
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Get the list of columns in the table
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        table_columns = [col[1] for col in cursor.fetchall()]
+        
+        # Ensure DataFrame columns match table columns
+        df_columns = set(df.columns)
+        table_columns_set = set(table_columns)
+        if not df_columns.issubset(table_columns_set):
+            invalid_columns = df_columns - table_columns_set
+            raise ValueError(f"DataFrame contains columns not in table: {invalid_columns}")
+        
+        # Create the unique index if it doesn't exist
+        index_name = f"idx_{table_name}_{'_'.join(unique_columns)}"
+        index_columns = ', '.join(unique_columns)
+        cursor.execute(f"""
+            CREATE UNIQUE INDEX IF NOT EXISTS {index_name} 
+            ON {table_name} ({index_columns})
+        """)
+        
+        # Prepare the INSERT OR REPLACE statement
+        columns = ', '.join(df.columns)
+        placeholders = ', '.join(['?' for _ in df.columns])
+        query = f"""
+            INSERT OR REPLACE INTO {table_name} ({columns})
+            VALUES ({placeholders})
+        """
+        
+        # Convert DataFrame to list of tuples for execution
+        records = df.to_records(index=False)
+        data = [tuple(record) for record in records]
+        
+        # Execute the upsert
+        cursor.executemany(query, data)
+        rows_affected = cursor.rowcount
+        
+        # Commit and close
+        conn.commit()
+        conn.close()
+        
+        return {
+            'status': 'success',
+            'rows_affected': rows_affected,
+            'message': f'Successfully upserted {rows_affected} rows'
+        }
+        
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        return {
+            'status': 'error',
+            'rows_affected': 0,
+            'message': f'Error during upsert: {str(e)}'
+        }
+
+def get_existing_records(db_path: str, 
+                        table_name: str, 
+                        unique_columns: List[str], 
+                        df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Get existing records from SQLite database that match the DataFrame's unique columns.
+    
+    Parameters:
+    -----------
+    db_path : str
+        Path to the SQLite database file
+    table_name : str
+        Name of the target database table
+    unique_columns : List[str]
+        List of column names that uniquely identify a row
+    df : pandas.DataFrame
+        DataFrame to check against database
+        
+    Returns:
+    --------
+    pandas.DataFrame
+        Matching records from database
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        
+        # Create the WHERE clause for unique columns
+        where_conditions = []
+        params = []
+        for col in unique_columns:
+            unique_values = df[col].unique().tolist()
+            placeholders = ','.join(['?' for _ in unique_values])
+            where_conditions.append(f"{col} IN ({placeholders})")
+            params.extend(unique_values)
+        
+        where_clause = ' AND '.join(where_conditions)
+        query = f"SELECT * FROM {table_name} WHERE {where_clause}"
+        
+        # Execute query and return results as DataFrame
+        existing_records = pd.read_sql_query(query, conn, params=params)
+        conn.close()
+        
+        return existing_records
+        
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        raise e
