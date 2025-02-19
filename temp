@@ -1,225 +1,294 @@
-# [Previous imports and MainWindow class remain the same...]
+import json
+import os
+import sys
+import sqlite3
+from datetime import datetime
+
+import pandas as pd
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
+                             QLabel, QLineEdit, QTableWidget, QTableWidgetItem,
+                             QMessageBox, QHeaderView, QWidget, QStackedWidget,
+                             QFrame, QScrollArea, QListWidget, QApplication, 
+                             QMainWindow, QStatusBar, QComboBox)
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QFont, QIcon
+
+class DatabaseManager:
+    def __init__(self):
+        self.conn = sqlite3.connect('access_control.db')
+        self.create_tables()
+
+    def create_tables(self):
+        cursor = self.conn.cursor()
+        
+        # Status Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS status_table (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                status_id TEXT NOT NULL,
+                status_name TEXT NOT NULL,
+                description TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                modified_date TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Field Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS field_table (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                field_id TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                field_type TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                created_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                modified_date TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        self.conn.commit()
+
+    def get_table_data(self, table_name):
+        cursor = self.conn.cursor()
+        if table_name == "Status Table":
+            cursor.execute('''
+                SELECT status_id, status_name, description 
+                FROM status_table 
+                WHERE is_active = 1
+            ''')
+            columns = ['Status ID', 'Status Name', 'Description']
+        else:  # Field Table
+            cursor.execute('''
+                SELECT field_id, field_name, field_type 
+                FROM field_table 
+                WHERE is_active = 1
+            ''')
+            columns = ['Field ID', 'Field Name', 'Field Type']
+        
+        rows = cursor.fetchall()
+        return pd.DataFrame(rows, columns=columns)
+
+    def add_record(self, table_name, data):
+        cursor = self.conn.cursor()
+        try:
+            if table_name == "Status Table":
+                cursor.execute('''
+                    INSERT INTO status_table (status_id, status_name, description)
+                    VALUES (?, ?, ?)
+                ''', (data['Status ID'], data['Status Name'], data['Description']))
+            else:
+                cursor.execute('''
+                    INSERT INTO field_table (field_id, field_name, field_type)
+                    VALUES (?, ?, ?)
+                ''', (data['Field ID'], data['Field Name'], data['Field Type']))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding record: {e}")
+            return False
+
+    def soft_delete_record(self, table_name, identifier):
+        cursor = self.conn.cursor()
+        try:
+            if table_name == "Status Table":
+                cursor.execute('''
+                    UPDATE status_table 
+                    SET is_active = 0, modified_date = CURRENT_TIMESTAMP
+                    WHERE status_id = ?
+                ''', (identifier,))
+            else:
+                cursor.execute('''
+                    UPDATE field_table 
+                    SET is_active = 0, modified_date = CURRENT_TIMESTAMP
+                    WHERE field_id = ?
+                ''', (identifier,))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error soft deleting record: {e}")
+            return False
+
+    def update_record(self, table_name, identifier, data):
+        cursor = self.conn.cursor()
+        try:
+            if table_name == "Status Table":
+                cursor.execute('''
+                    UPDATE status_table 
+                    SET status_name = ?, description = ?, modified_date = CURRENT_TIMESTAMP
+                    WHERE status_id = ? AND is_active = 1
+                ''', (data['Status Name'], data['Description'], identifier))
+            else:
+                cursor.execute('''
+                    UPDATE field_table 
+                    SET field_name = ?, field_type = ?, modified_date = CURRENT_TIMESTAMP
+                    WHERE field_id = ? AND is_active = 1
+                ''', (data['Field Name'], data['Field Type'], identifier))
+            
+            self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating record: {e}")
+            return False
 
 class AccessControlDialog(QDialog):
-    # [Previous __init__ and other methods remain the same until setup_sto_panel...]
-
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Access Control Management")
+        self.setMinimumSize(1200, 700)
+        
+        # Initialize database
+        self.db = DatabaseManager()
+        
+        self.setup_ui()
+        
     def setup_sto_panel(self):
         sto_widget = QFrame()
         layout = QVBoxLayout(sto_widget)
         layout.setSpacing(20)
         
-        # Title with enhanced styling
+        # Title
         title = QLabel("STO Table Management")
         title.setProperty("heading", True)
         layout.addWidget(title)
         
-        # Table selection with modern styling
-        table_select_frame = QFrame()
-        table_select_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-            }
-            QComboBox {
-                border: 2px solid #e0e0e0;
-                border-radius: 6px;
-                padding: 8px 15px;
-                min-width: 200px;
-                background-color: white;
-                font-size: 14px;
-            }
-            QComboBox:focus {
-                border-color: #4a90e2;
-            }
-            QComboBox::drop-down {
-                border: none;
-                padding-right: 20px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 5px solid transparent;
-                border-right: 5px solid transparent;
-                border-top: 5px solid #666;
-                margin-right: 10px;
-            }
-        """)
-        
-        table_select_layout = QHBoxLayout(table_select_frame)
-        table_select_layout.setContentsMargins(15, 10, 15, 10)
+        # Table selection
+        select_layout = QHBoxLayout()
         
         table_label = QLabel("Select Table:")
-        table_label.setStyleSheet("""
-            QLabel {
-                font-size: 14px;
-                font-weight: bold;
-                color: #2c3e50;
-            }
-        """)
-        
         self.table_combo = QComboBox()
         self.table_combo.addItems(["Status Table", "Field Table"])
         self.table_combo.currentTextChanged.connect(self.show_selected_table)
         
-        table_select_layout.addWidget(table_label)
-        table_select_layout.addWidget(self.table_combo)
-        table_select_layout.addStretch()
+        select_layout.addWidget(table_label)
+        select_layout.addWidget(self.table_combo)
+        select_layout.addStretch()
         
-        layout.addWidget(table_select_frame)
+        layout.addLayout(select_layout)
         
-        # Table container with shadow effect
-        table_container = QFrame()
-        table_container.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-            }
-        """)
-        table_container_layout = QVBoxLayout(table_container)
-        
-        # Enhanced table styling
+        # Table widget with simple styling
         self.table_widget = QTableWidget()
         self.table_widget.setStyleSheet("""
             QTableWidget {
-                border: none;
+                border: 1px solid #ddd;
                 background-color: white;
-                gridline-color: #f0f0f0;
-            }
-            QTableWidget::item {
-                padding: 10px;
-                border-bottom: 1px solid #f0f0f0;
-            }
-            QTableWidget::item:selected {
-                background-color: #e3f2fd;
-                color: #2c3e50;
             }
             QHeaderView::section {
-                background-color: #f8f9fa;
-                padding: 12px;
+                background-color: #f5f5f5;
+                padding: 8px;
                 border: none;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 1px solid #ddd;
                 font-weight: bold;
-                color: #2c3e50;
-                font-size: 13px;
             }
-            QTableWidget::item:hover {
-                background-color: #f8f9fa;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #f0f0f0;
-                width: 10px;
-                margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #c0c0c0;
-                border-radius: 5px;
-                min-height: 20px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #a0a0a0;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
+            QTableWidget::item {
+                padding: 5px;
             }
         """)
+        self.table_widget.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
+        layout.addWidget(self.table_widget)
         
-        table_container_layout.addWidget(self.table_widget)
-        layout.addWidget(table_container)
-        
-        # Action buttons with modern styling
-        buttons_frame = QFrame()
-        buttons_frame.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 8px;
-                padding: 15px;
-            }
-            QPushButton {
-                min-width: 120px;
-                padding: 10px 20px;
-            }
-            QPushButton#addBtn {
-                background-color: #4caf50;
-            }
-            QPushButton#addBtn:hover {
-                background-color: #43a047;
-            }
-            QPushButton#deleteBtn {
-                background-color: #f44336;
-            }
-            QPushButton#deleteBtn:hover {
-                background-color: #e53935;
-            }
-            QPushButton#saveBtn {
-                background-color: #2196f3;
-            }
-            QPushButton#saveBtn:hover {
-                background-color: #1e88e5;
-            }
-        """)
-        
-        buttons_layout = QHBoxLayout(buttons_frame)
-        buttons_layout.setSpacing(15)
+        # Action buttons
+        button_layout = QHBoxLayout()
         
         add_row_btn = QPushButton("Add Row")
-        add_row_btn.setObjectName("addBtn")
-        add_row_btn.setIcon(QIcon.fromTheme("list-add"))
-        
         delete_row_btn = QPushButton("Delete Selected")
-        delete_row_btn.setObjectName("deleteBtn")
-        delete_row_btn.setIcon(QIcon.fromTheme("edit-delete"))
-        
         save_changes_btn = QPushButton("Save Changes")
-        save_changes_btn.setObjectName("saveBtn")
-        save_changes_btn.setIcon(QIcon.fromTheme("document-save"))
         
         add_row_btn.clicked.connect(self.add_table_row)
         delete_row_btn.clicked.connect(self.delete_table_row)
         save_changes_btn.clicked.connect(self.save_table_changes)
         
-        buttons_layout.addWidget(add_row_btn)
-        buttons_layout.addWidget(delete_row_btn)
-        buttons_layout.addWidget(save_changes_btn)
-        buttons_layout.addStretch()
+        button_layout.addWidget(add_row_btn)
+        button_layout.addWidget(delete_row_btn)
+        button_layout.addWidget(save_changes_btn)
+        button_layout.addStretch()
         
-        layout.addWidget(buttons_frame)
+        layout.addLayout(button_layout)
         
         self.right_stack.addWidget(sto_widget)
         self.show_selected_table("Status Table")
 
     def show_selected_table(self, table_name):
-        if table_name == "Status Table":
-            df = self.status_table
-        else:  # Field Table
-            df = self.field_table
+        # Get data from database
+        df = self.db.get_table_data(table_name)
         
-        # Set up table widget
+        # Set up table
         self.table_widget.setRowCount(len(df))
         self.table_widget.setColumnCount(len(df.columns))
         self.table_widget.setHorizontalHeaderLabels(df.columns)
         
-        # Populate table with improved formatting
+        # Populate table
         for i, row in df.iterrows():
             for j, value in enumerate(row):
                 item = QTableWidgetItem(str(value))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 self.table_widget.setItem(i, j, item)
         
-        # Adjust column widths and row heights
-        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table_widget.verticalHeader().setDefaultSectionSize(50)
+        # Adjust columns to content
+        self.table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.table_widget.horizontalHeader().setMinimumSectionSize(100)
+
+    def add_table_row(self):
+        current_table = self.table_combo.currentText()
+        row_position = self.table_widget.rowCount()
+        self.table_widget.insertRow(row_position)
         
-        # Hide vertical header (row numbers)
-        self.table_widget.verticalHeader().setVisible(False)
-        
-        # Alternate row colors
-        self.table_widget.setAlternatingRowColors(True)
-        self.table_widget.setStyleSheet(self.table_widget.styleSheet() + """
-            QTableWidget {
-                alternate-background-color: #f8f9fa;
-            }
-        """)
+        # Add empty cells
+        for i in range(self.table_widget.columnCount()):
+            self.table_widget.setItem(row_position, i, QTableWidgetItem(""))
+
+    def delete_table_row(self):
+        selected_items = self.table_widget.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "No Selection", "Please select a row to delete.")
+            return
+            
+        reply = QMessageBox.question(self, "Confirm Deletion",
+                                   "Are you sure you want to delete the selected row(s)?",
+                                   QMessageBox.StandardButton.Yes |
+                                   QMessageBox.StandardButton.No)
+                                   
+        if reply == QMessageBox.StandardButton.Yes:
+            current_table = self.table_combo.currentText()
+            for item in selected_items:
+                row = item.row()
+                identifier = self.table_widget.item(row, 0).text()  # Get ID from first column
+                if self.db.soft_delete_record(current_table, identifier):
+                    self.table_widget.removeRow(row)
+
+    def save_table_changes(self):
+        try:
+            current_table = self.table_combo.currentText()
+            rows = self.table_widget.rowCount()
+            cols = self.table_widget.columnCount()
+            
+            # Get column headers
+            headers = [self.table_widget.horizontalHeaderItem(i).text() 
+                      for i in range(cols)]
+            
+            # Save each row
+            for row in range(rows):
+                row_data = {}
+                for col in range(cols):
+                    item = self.table_widget.item(row, col)
+                    row_data[headers[col]] = item.text() if item else ""
+                
+                # Update or insert based on whether it's a new row
+                identifier = row_data[headers[0]]  # First column is the ID
+                if identifier:
+                    self.db.update_record(current_table, identifier, row_data)
+                else:
+                    self.db.add_record(current_table, row_data)
+            
+            QMessageBox.information(self, "Success", 
+                                  "Changes saved successfully!",
+                                  QMessageBox.StandardButton.Ok)
+                                  
+            # Refresh the table
+            self.show_selected_table(current_table)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to save changes: {e}")
 
     # [Rest of the methods remain the same...]
