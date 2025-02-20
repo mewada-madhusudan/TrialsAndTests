@@ -9,11 +9,19 @@ class BaseApplicationWidget(QWidget):
     """Base class with common functionality for both widget types"""
     def __init__(self, environment: str, version: str, parent=None):
         super().__init__(parent)
-        self.environment = environment  # UAT/PROD/BETA
+        self.environment = environment
         self.version = version
         
+        # Define fixed header height
+        self.HEADER_HEIGHT = 150  # pixels
+        self.LOGO_WIDTH = 350    # pixels
+        
         # Common style sheets
-        self.console_style = "background-color: #2F2F2F; color: white;"
+        self.console_style = """
+            background-color: #2F2F2F;
+            color: white;
+            padding: 10px;
+        """
         self.logo_style = "background-color: white; border: none;"
         self.development_style = "background-color: #FFD43B;"
         self.sidebar_style = "background-color: #4CAF50;"
@@ -24,14 +32,17 @@ class BaseApplicationWidget(QWidget):
         """
         
     def _create_header(self):
-        """Create the console/log window and logo header"""
+        """Create the console/log window and logo header with fixed height"""
         header = QWidget()
+        header.setFixedHeight(self.HEADER_HEIGHT)
+        
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(0)
         
         # Console/Log Window
         self.console_frame = QFrame()
+        self.console_frame.setFixedHeight(self.HEADER_HEIGHT)
         self.console_frame.setStyleSheet(self.console_style)
         console_layout = QHBoxLayout()
         console_label = QLabel("CONSOLE/LOG Window")
@@ -42,13 +53,14 @@ class BaseApplicationWidget(QWidget):
         # Logo area
         self.logo_frame = QFrame()
         self.logo_frame.setStyleSheet(self.logo_style)
-        self.logo_frame.setFixedWidth(200)
+        self.logo_frame.setFixedSize(self.LOGO_WIDTH, self.HEADER_HEIGHT)
         logo_layout = QHBoxLayout()
         
         # Create logo label with the wardrobe image
         logo_label = QLabel()
-        pixmap = QPixmap("wardrobe_logo.png")  # Ensure this image is in your project directory
-        scaled_pixmap = pixmap.scaled(180, 100, Qt.AspectRatioMode.KeepAspectRatio, 
+        pixmap = QPixmap("wardrobe_logo.png")
+        scaled_pixmap = pixmap.scaled(self.LOGO_WIDTH - 20, self.HEADER_HEIGHT - 20,
+                                    Qt.AspectRatioMode.KeepAspectRatio,
                                     Qt.TransformationMode.SmoothTransformation)
         logo_label.setPixmap(scaled_pixmap)
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -64,17 +76,15 @@ class BaseApplicationWidget(QWidget):
     def _create_footer(self):
         """Create the footer with version and environment"""
         footer = QWidget()
-        footer.setFixedHeight(25)  # Set fixed height for the strip
+        footer.setFixedHeight(25)
         footer.setStyleSheet(self.footer_style)
         
         footer_layout = QHBoxLayout()
         footer_layout.setContentsMargins(5, 0, 5, 0)
         
-        # Version on the left
         version_label = QLabel(f"v{self.version}")
         version_label.setStyleSheet("color: #666666;")
         
-        # Environment on the right
         env_label = QLabel(self.environment)
         env_label.setStyleSheet("color: #666666;")
         
