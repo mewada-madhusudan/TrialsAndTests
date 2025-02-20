@@ -1,18 +1,27 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QSplitter)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap
 
+from PyQt6.QtWidgets import QApplication
+import sys
 class BaseApplicationWidget(QWidget):
     """Base class with common functionality for both widget types"""
-    def __init__(self, version: str, parent=None):
+    def __init__(self, environment: str, version: str, parent=None):
         super().__init__(parent)
+        self.environment = environment  # UAT/PROD/BETA
         self.version = version
         
         # Common style sheets
         self.console_style = "background-color: #2F2F2F; color: white;"
-        self.logo_style = "background-color: #87CEEB;"
+        self.logo_style = "background-color: white; border: none;"
         self.development_style = "background-color: #FFD43B;"
         self.sidebar_style = "background-color: #4CAF50;"
+        self.footer_style = """
+            background-color: #F0F0F0;
+            border-top: 1px solid #CCCCCC;
+            padding: 2px;
+        """
         
     def _create_header(self):
         """Create the console/log window and logo header"""
@@ -33,21 +42,53 @@ class BaseApplicationWidget(QWidget):
         # Logo area
         self.logo_frame = QFrame()
         self.logo_frame.setStyleSheet(self.logo_style)
-        self.logo_frame.setFixedWidth(150)
+        self.logo_frame.setFixedWidth(200)
         logo_layout = QHBoxLayout()
-        logo_label = QLabel("LOGO")
-        logo_layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        # Create logo label with the wardrobe image
+        logo_label = QLabel()
+        pixmap = QPixmap("wardrobe_logo.png")  # Ensure this image is in your project directory
+        scaled_pixmap = pixmap.scaled(180, 100, Qt.AspectRatioMode.KeepAspectRatio, 
+                                    Qt.TransformationMode.SmoothTransformation)
+        logo_label.setPixmap(scaled_pixmap)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo_layout.addWidget(logo_label)
+        
         self.logo_frame.setLayout(logo_layout)
         
         header_layout.addWidget(self.console_frame)
         header_layout.addWidget(self.logo_frame)
         header.setLayout(header_layout)
         return header
+    
+    def _create_footer(self):
+        """Create the footer with version and environment"""
+        footer = QWidget()
+        footer.setFixedHeight(25)  # Set fixed height for the strip
+        footer.setStyleSheet(self.footer_style)
+        
+        footer_layout = QHBoxLayout()
+        footer_layout.setContentsMargins(5, 0, 5, 0)
+        
+        # Version on the left
+        version_label = QLabel(f"v{self.version}")
+        version_label.setStyleSheet("color: #666666;")
+        
+        # Environment on the right
+        env_label = QLabel(self.environment)
+        env_label.setStyleSheet("color: #666666;")
+        
+        footer_layout.addWidget(version_label)
+        footer_layout.addStretch()
+        footer_layout.addWidget(env_label)
+        
+        footer.setLayout(footer_layout)
+        return footer
 
 class ApplicationWidgetWithSidebar(BaseApplicationWidget):
-    """Application widget with sidebar layout (Image 1)"""
-    def __init__(self, version: str, parent=None):
-        super().__init__(version, parent)
+    """Application widget with sidebar layout"""
+    def __init__(self, environment: str, version: str, parent=None):
+        super().__init__(environment, version, parent)
         self._setup_ui()
         
     def _setup_ui(self):
@@ -82,23 +123,19 @@ class ApplicationWidgetWithSidebar(BaseApplicationWidget):
         # Add frames to splitter
         splitter.addWidget(self.sidebar_frame)
         splitter.addWidget(self.development_frame)
-        
-        # Set initial sizes (approximately 20-80 split)
         splitter.setSizes([200, 800])
         
         main_layout.addWidget(splitter)
         
-        # Add version label at bottom
-        version_label = QLabel(f"PROD:UAT:BETA v{self.version}")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        main_layout.addWidget(version_label)
+        # Add footer
+        main_layout.addWidget(self._create_footer())
         
         self.setLayout(main_layout)
 
 class ApplicationWidgetWithoutSidebar(BaseApplicationWidget):
-    """Application widget without sidebar layout (Image 2)"""
-    def __init__(self, version: str, parent=None):
-        super().__init__(version, parent)
+    """Application widget without sidebar layout"""
+    def __init__(self, environment: str, version: str, parent=None):
+        super().__init__(environment, version, parent)
         self._setup_ui()
         
     def _setup_ui(self):
@@ -120,27 +157,29 @@ class ApplicationWidgetWithoutSidebar(BaseApplicationWidget):
         
         main_layout.addWidget(self.development_frame)
         
-        # Add version label at bottom
-        version_label = QLabel(f"PROD:UAT:BETA v{self.version}")
-        version_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        main_layout.addWidget(version_label)
+        # Add footer
+        main_layout.addWidget(self._create_footer())
         
         self.setLayout(main_layout)
 
 
-from PyQt6.QtWidgets import QApplication
-import sys
 
 # Create application
 app = QApplication(sys.argv)
 
 # Create widget with sidebar
-widget_with_sidebar = ApplicationWidgetWithSidebar(version="1.0")
+widget_with_sidebar = ApplicationWidgetWithSidebar(
+    environment="UAT:PROD:BETA",
+    version="1.0"
+)
 widget_with_sidebar.resize(1024, 768)
 widget_with_sidebar.show()
 
 # Or create widget without sidebar
-widget_without_sidebar = ApplicationWidgetWithoutSidebar(version="1.0")
+widget_without_sidebar = ApplicationWidgetWithoutSidebar(
+    environment="UAT:PROD:BETA",
+    version="1.0"
+)
 widget_without_sidebar.resize(1024, 768)
 widget_without_sidebar.show()
 
