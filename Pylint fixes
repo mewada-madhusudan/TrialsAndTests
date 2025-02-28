@@ -1,0 +1,75 @@
+from pylint import lint
+from pylint.reporters.text import TextReporter
+import sys
+import os
+from io import StringIO
+
+def run_pylint(target_path, rc_file=None):
+    # Redirect output to a string buffer
+    pylint_output = StringIO()
+    reporter = TextReporter(pylint_output)
+    
+    # Configure pylint options
+    options = [
+        "--output-format=text",
+        "--reports=y",
+    ]
+    
+    # Add pylintrc file if provided
+    if rc_file and os.path.isfile(rc_file):
+        options.append(f"--rcfile={rc_file}")
+    
+    # Add the target path last
+    options.append(target_path)
+    
+    # Run pylint
+    lint.Run(options, reporter=reporter, exit=False)
+    
+    # Get the output as a string
+    return pylint_output.getvalue()
+
+def process_results(pylint_output, output_dir="."):
+    # Create output file path
+    output_file = os.path.join(output_dir, "pylint.log")
+    
+    # Write output to a log file
+    with open(output_file, "w") as log_file:
+        log_file.write(pylint_output)
+    
+    return output_file
+
+def main():
+    # For command line usage example:
+    if len(sys.argv) < 2:
+        print("Usage: program <folder_path> [pylintrc_path]")
+        sys.exit(1)
+    
+    folder_path = sys.argv[1]
+    rc_file = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    # Run pylint with the specified options
+    results = run_pylint(folder_path, rc_file)
+    
+    # Save the results
+    log_file = process_results(results, folder_path)
+    print(f"Pylint analysis complete. Results saved to {log_file}")
+
+if __name__ == "__main__":
+    main()
+___________________________
+# yourapp.spec
+a = Analysis(
+    ['yourscript.py'],
+    pathex=[],
+    binaries=[],
+    datas=[],
+    hiddenimports=['pylint', 'pylint.lint', 'pylint.reporters', 'pylint.checkers'],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=None,
+    noarchive=False,
+)
