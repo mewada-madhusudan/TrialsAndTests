@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+  <!-- Background -->
+  <rect width="900" height="600" fill="#f8f9fa" rx="10" ry="10"/>
+  
+  <!-- Title -->
+  <text x="450" y="40" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#333">PSLV User Workflow and Authentication Flow</text>
+  
+  <!-- User Icon -->
+  <circle cx="100" cy="130" r="30" fill="#bbdefb" stroke="#1976d2" stroke-width="2"/>
+  <circle cx="100" cy="110" r="10" fill="#1976d2"/>
+  <path d="M75,145 Q100,170 125,145" fill="none" stroke="#1976d2" stroke-width="2"/>
+  <text x="100" y="190" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">User</text>
+  
+  <!-- Login System -->
+  <rect x="220" y="100" width="120" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
+  <text x="280" y="135" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Login Portal</text>
+  
+  <!-- Auth Service -->
+  <rect x="400" y="100" width="140" height="60" rx="10" ry="10" fill="#e8f5e9" stroke="#43a047" stroke-width="2"/>
+  <text x="470" y="135" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Authentication</text>
+  <text x="470" y="155" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Service</text>
+  
+  <!-- Database -->
+  <path d="M590,100 C590,90 650,90 650,100 L650,160 C650,170 590,170 590,160 Z" fill="#e8eaf6" stroke="#3949ab" stroke-width="2"/>
+  <path d="M590,100 C590,110 650,110 650,100" fill="none" stroke="#3949ab" stroke-width="2"/>
+  <text x="620" y="140" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">User DB</text>
+  
+  <!-- External API -->
+  <rect x="400" y="200" width="140" height="60" rx="10" ry="10" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+  <text x="470" y="235" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">External API</text>
+  
+  <!-- Dashboard -->
+  <rect x="220" y="300" width="120" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
+  <text x="280" y="335" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">User Dashboard</text>
+  
+  <!-- Solutions DB -->
+  <path d="M590,300 C590,290 650,290 650,300 L650,360 C650,370 590,370 590,360 Z" fill="#e8eaf6" stroke="#3949ab" stroke-width="2"/>
+  <path d="M590,300 C590,310 650,310 650,300" fill="none" stroke="#3949ab" stroke-width="2"/>
+  <text x="620" y="335" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Solutions</text>
+  <text x="620" y="355" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Repository</text>
+  
+  <!-- Access Rights DB -->
+  <path d="M590,400 C590,390 650,390 650,400 L650,460 C650,470 590,470 590,460 Z" fill="#e8eaf6" stroke="#3949ab" stroke-width="2"/>
+  <path d="M590,400 C590,410 650,410 650,400" fill="none" stroke="#3949ab" stroke-width="2"/>
+  <text x="620" y="435" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Access</text>
+  <text x="620" y="455" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Rights</text>
+  
+  <!-- Solution Service -->
+  <rect x="400" y="300" width="140" height="60" rx="10" ry="10" fill="#e8f5e9" stroke="#43a047" stroke-width="2"/>
+  <text x="470" y="335" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Solution</text>
+  <text x="470" y="355" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Service</text>
+  
+  <!-- Access Service -->
+  <rect x="400" y="400" width="140" height="60" rx="10" ry="10" fill="#e8f5e9" stroke="#43a047" stroke-width="2"/>
+  <text x="470" y="435" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Access</text>
+  <text x="470" y="455" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Service</text>
+  
+  <!-- Installation -->
+  <rect x="220" y="400" width="120" height="60" rx="10" ry="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
+  <text x="280" y="425" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">Installation</text>
+  <text x="280" y="445" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">Manager</text>
+  
+  <!-- Admin paths -->
+  <rect x="220" y="500" width="120" height="60" rx="10" ry="10" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2"/>
+  <text x="280" y="525" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">BM Admin</text>
+  <text x="280" y="545" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">Panel</text>
+  
+  <rect x="400" y="500" width="140" height="60" rx="10" ry="10" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2"/>
+  <text x="470" y="525" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">Super Admin</text>
+  <text x="470" y="545" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#333">Panel</text>
+  
+  <!-- Connection lines -->
+  <!-- User to Login -->
+  <path d="M130,130 L220,130" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="175" y="120" font-family="Arial, sans-serif" font-size="12" fill="#666">1. Login</text>
+  
+  <!-- Login to Auth -->
+  <path d="M340,130 L400,130" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="370" y="120" font-family="Arial, sans-serif" font-size="12" fill="#666">2. Verify</text>
+  
+  <!-- Auth to DB -->
+  <path d="M540,130 L590,130" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="565" y="120" font-family="Arial, sans-serif" font-size="12" fill="#666">3. Check DB</text>
+  
+  <!-- Auth to API -->
+  <path d="M470,160 L470,200" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="485" y="180" font-family="Arial, sans-serif" font-size="12" fill="#666">4. Cross-verify</text>
+  
+  <!-- Auth to Dashboard -->
+  <path d="M470,260 L470,280 L280,280 L280,300" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="370" y="275" font-family="Arial, sans-serif" font-size="12" fill="#666">5. Valid User</text>
+  
+  <!-- Dashboard to Solution Service -->
+  <path d="M340,330 L400,330" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="370" y="320" font-family="Arial, sans-serif" font-size="12" fill="#666">6. List Solutions</text>
+  
+  <!-- Dashboard to Installation -->
+  <path d="M280,360 L280,400" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="295" y="380" font-family="Arial, sans-serif" font-size="12" fill="#666">9. Select Action</text>
+  
+  <!-- Installation to Solution Service -->
+  <path d="M340,430 L400,430" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="355" y="420" font-family="Arial, sans-serif" font-size="12" fill="#666">10. Process</text>
+  
+  <!-- Solution Service to Solutions DB -->
+  <path d="M540,330 L590,330" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="550" y="320" font-family="Arial, sans-serif" font-size="12" fill="#666">7. Fetch</text>
+  
+  <!-- Access Service to Access DB -->
+  <path d="M540,430 L590,430" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="550" y="420" font-family="Arial, sans-serif" font-size="12" fill="#666">8. Check Rights</text>
+  
+  <!-- Solution Service to Access Service -->
+  <path d="M470,360 L470,400" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="485" y="380" font-family="Arial, sans-serif" font-size="12" fill="#666">Filter</text>
+  
+  <!-- Auth to Admin paths -->
+  <path d="M390,160 L390,250 L280,250 L280,500" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <text x="290" y="245" font-family="Arial, sans-serif" font-size="12" fill="#666">If BM Role</text>
+  
+  <path d="M550,160 L550,250 L470,250 L470,500" fill="none" stroke="#666" stroke-width="2" marker-end="url(#arrow)" stroke-dasharray="5,5"/>
+  <text x="490" y="245" font-family="Arial, sans-serif" font-size="12" fill="#666">If Super Admin</text>
+  
+  <!-- Arrow marker -->
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#666"/>
+    </marker>
+  </defs>
+  
+  <!-- Legend -->
+  <rect x="700" y="480" width="180" height="100" fill="white" stroke="#333" stroke-width="1" rx="5" ry="5"/>
+  <text x="790" y="500" font-family="Arial, sans-serif" font-size="14" font-weight="bold" text-anchor="middle" fill="#333">Legend</text>
+  
+  <rect x="710" y="510" width="20" height="10" fill="#e3f2fd" stroke="#1976d2" stroke-width="1"/>
+  <text x="740" y="520" font-family="Arial, sans-serif" font-size="12" fill="#333">UI Components</text>
+  
+  <rect x="710" y="530" width="20" height="10" fill="#e8f5e9" stroke="#43a047" stroke-width="1"/>
+  <text x="740" y="540" font-family="Arial, sans-serif" font-size="12" fill="#333">Services</text>
+  
+  <rect x="710" y="550" width="20" height="10" fill="#e8eaf6" stroke="#3949ab" stroke-width="1"/>
+  <text x="740" y="560" font-family="Arial, sans-serif" font-size="12" fill="#333">Database</text>
+  
+  <rect x="710" y="570" width="20" height="10" fill="#f
