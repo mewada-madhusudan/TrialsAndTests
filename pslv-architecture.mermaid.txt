@@ -1,0 +1,59 @@
+flowchart TB
+    subgraph "Presentation Layer"
+        UI[User Interface]
+        Login[Login Page]
+        Dashboard[User Dashboard]
+        AdminPanel[Admin Panel]
+        BMPanel[BM Panel]
+    end
+
+    subgraph "Business Logic Layer"
+        AuthService[Authentication Service]
+        UserService[User Service]
+        SolutionService[Solution Service]
+        AccessService[Access Management Service]
+        InstallationService[Installation Service]
+    end
+
+    subgraph "Data Access Layer"
+        DAL[Data Access Layer]
+        API[External API Integration]
+    end
+
+    subgraph "Database"
+        Users[(Users Table)]
+        Solutions[(Solutions Repository)]
+        AccessRights[(Access Rights)]
+        BMRoles[(BM Roles)]
+    end
+
+    %% Connections
+    UI --> Login
+    Login --> AuthService
+    AuthService --> DAL
+    AuthService --> API
+    DAL <--> Users
+    DAL <--> Solutions
+    DAL <--> AccessRights
+    DAL <--> BMRoles
+
+    %% Authentication flow
+    AuthService -- "Valid User?" --> Dashboard
+    AuthService -- "Valid BM?" --> BMPanel
+    AuthService -- "Valid Super Admin?" --> AdminPanel
+
+    %% Dashboard functionality
+    Dashboard --> SolutionService
+    SolutionService --> DAL
+    SolutionService --> InstallationService
+    InstallationService -- "Install/Uninstall/Update" --> Solutions
+
+    %% Admin functionality
+    AdminPanel --> UserService
+    AdminPanel --> AccessService
+    UserService <--> DAL
+    AccessService <--> DAL
+
+    %% BM functionality
+    BMPanel --> AccessService
+    BMPanel --> SolutionService

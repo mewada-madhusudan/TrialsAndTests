@@ -1,0 +1,73 @@
+classDiagram
+    class User {
+        +id
+        +username
+        +password
+        +role
+        +accessRights[]
+    }
+
+    class Solution {
+        +id
+        +name
+        +version
+        +repositoryPath
+        +description
+        +LOB
+    }
+
+    class AccessRight {
+        +userId
+        +solutionId
+        +permissionLevel
+    }
+
+    class BMRole {
+        +userId
+        +LOB
+    }
+
+    class AuthenticationService {
+        +login(username, password)
+        +logout()
+        +validateUserWithAPI()
+        +getUserRole()
+    }
+
+    class UserService {
+        +getUsers()
+        +createUser()
+        +updateUser()
+        +deleteUser()
+        +assignRole()
+    }
+
+    class SolutionService {
+        +getSolutions()
+        +getSolutionsByUser(userId)
+        +addSolution()
+        +updateSolution()
+        +removeSolution()
+    }
+
+    class AccessService {
+        +grantAccess(userId, solutionId)
+        +revokeAccess(userId, solutionId)
+        +checkAccess(userId, solutionId)
+    }
+
+    class InstallationService {
+        +installSolution(solutionId)
+        +uninstallSolution(solutionId)
+        +updateSolution(solutionId)
+    }
+
+    User "1" -- "many" AccessRight
+    Solution "1" -- "many" AccessRight
+    User "1" -- "0..1" BMRole
+    AuthenticationService -- User: authenticates
+    UserService -- User: manages
+    SolutionService -- Solution: manages
+    AccessService -- AccessRight: manages
+    AccessService -- BMRole: uses
+    InstallationService -- Solution: manipulates
