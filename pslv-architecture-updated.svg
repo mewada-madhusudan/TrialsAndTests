@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 900">
+  <!-- Background -->
+  <rect width="1000" height="900" fill="#f8f9fa" rx="10" ry="10"/>
+  
+  <!-- Title -->
+  <text x="500" y="50" font-family="Arial, sans-serif" font-size="28" font-weight="bold" text-anchor="middle" fill="#333">PSLV Software Architecture</text>
+  
+  <!-- Layer Backgrounds -->
+  <rect x="50" y="90" width="900" height="160" fill="#e1f5fe" rx="10" ry="10" stroke="#0288d1" stroke-width="2"/>
+  <rect x="50" y="280" width="900" height="220" fill="#e8f5e9" rx="10" ry="10" stroke="#43a047" stroke-width="2"/>
+  <rect x="50" y="530" width="900" height="120" fill="#fff3e0" rx="10" ry="10" stroke="#ef6c00" stroke-width="2"/>
+  <rect x="50" y="680" width="900" height="150" fill="#e8eaf6" rx="10" ry="10" stroke="#3949ab" stroke-width="2"/>
+  
+  <!-- Layer Labels -->
+  <text x="70" y="120" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0288d1">Presentation Layer</text>
+  <text x="70" y="310" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#43a047">Business Logic Layer</text>
+  <text x="70" y="560" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#ef6c00">Data Access Layer</text>
+  <text x="70" y="710" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#3949ab">External Integration Layer</text>
+  
+  <!-- Presentation Layer Components -->
+  <rect x="100" y="150" width="140" height="70" rx="5" ry="5" fill="#81d4fa" stroke="#0288d1" stroke-width="2"/>
+  <text x="170" y="180" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Loading Screen</text>
+  
+  <rect x="300" y="150" width="140" height="70" rx="5" ry="5" fill="#81d4fa" stroke="#0288d1" stroke-width="2"/>
+  <text x="370" y="180" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">No Access Screen</text>
+  
+  <rect x="500" y="150" width="140" height="70" rx="5" ry="5" fill="#81d4fa" stroke="#0288d1" stroke-width="2"/>
+  <text x="570" y="180" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Solutions UI</text>
+  
+  <rect x="700" y="150" width="140" height="70" rx="5" ry="5" fill="#81d4fa" stroke="#0288d1" stroke-width="2"/>
+  <text x="770" y="180" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Access Management</text>
+  
+  <!-- Business Logic Layer Components -->
+  <rect x="100" y="320" width="200" height="80" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="200" y="360" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Authentication Service</text>
+  
+  <rect x="400" y="320" width="200" height="80" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="500" y="360" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Access Management Service</text>
+  
+  <rect x="700" y="320" width="200" height="80" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="800" y="360" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">User Service</text>
+  
+  <rect x="400" y="430" width="200" height="80" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="500" y="470" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Solution Service</text>
+  
+  <!-- Subnodes for Access Management -->
+  <rect x="650" y="430" width="120" height="50" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="710" y="460" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">BM Panel</text>
+  
+  <rect x="800" y="430" width="120" height="50" rx="5" ry="5" fill="#a5d6a7" stroke="#43a047" stroke-width="2"/>
+  <text x="860" y="460" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#333">Admin Panel</text>
+  
+  <!-- Data Access Layer Components -->
+  <rect x="250" y="570" width="500" height="70" rx="5" ry="5" fill="#ffcc80" stroke="#ef6c00" stroke-width="2"/>
+  <text x="500" y="610" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Database</text>
+  
+  <!-- External Integration Layer Components -->
+  <rect x="250" y="730" width="500" height="70" rx="5" ry="5" fill="#c5cae9" stroke="#3949ab" stroke-width="2"/>
+  <text x="500" y="770" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#333">Phone Book API</text>
+  
+  <!-- Connections -->
+  <!-- Presentation Layer Connections -->
+  <path d="M170,220 L170,320" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="170,315 165,305 175,305" fill="#666"/>
+  
+  <path d="M370,220 L200,320" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="205,315 195,310 205,305" fill="#666"/>
+  
+  <path d="M570,220 L500,320" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="505,315 495,310 505,305" fill="#666"/>
+  
+  <path d="M770,220 L600,320" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="605,315 595,310 605,305" fill="#666"/>
+  
+  <!-- Business Logic Layer Connections -->
+  <path d="M200,400 L200,570" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="200,565 195,555 205,555" fill="#666"/>
+  
+  <path d="M500,400 L500,570" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="500,565 495,555 505,555" fill="#666"/>
+  
+  <path d="M800,400 L500,570" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="505,565 495,560 505,555" fill="#666"/>
+  
+  <!-- BM and Admin Panel Connections -->
+  <path d="M710,480 L500,570" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="505,565 495,560 505,555" fill="#666"/>
+  
+  <path d="M860,480 L500,570" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="505,565 495,560 505,555" fill="#666"/>
+  
+  <!-- External Integration Connection -->
+  <path d="M500,640 L500,730" fill="none" stroke="#666" stroke-width="2" stroke-dasharray="5,5"/>
+  <polygon points="500,725 495,715 505,715" fill="#666"/>
+  
+  <!-- Legend -->
+  <rect x="730" y="830" width="230" height="50" fill="white" stroke="#333" stroke-width="1" rx="5" ry="5"/>
+  <circle cx="750" cy="845" r="6" fill="#0288d1"/>
+  <text x="765" y="850" font-family="Arial, sans-serif" font-size="14" fill="#333">Presentation</text>
+  <circle cx="750" cy="870" r="6" fill="#43a047"/>
+  <text x="765" y="875" font-family="Arial, sans-serif" font-size="14" fill="#333">Business Logic</text>
+  <circle cx="850" cy="845" r="6" fill="#ef6c00"/>
+  <text x="865" y="850" font-family="Arial, sans-serif" font-size="14" fill="#333">Data Access</text>
+  <circle cx="850" cy="870" r="6" fill="#3949ab"/>
+  <text x="865" y="875" font-family="Arial, sans-serif" font-size="14" fill="#333">External Integration</text>
+</svg>
