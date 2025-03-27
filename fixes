@@ -1,27 +1,86 @@
-import re
+import os
+import sqlite3
+import time
+from contextlib import contextmanager
 
-def parse_error_string(error_string):
-    # Define the pattern to match your specific format
-    pattern = r'(.*\.py):(\d+):(\d+):(C\d+): (.+)'
-    
-    # Search for the pattern in the provided string
-    match = re.search(pattern, error_string)
-    
-    if match:
-        # Extract each component from the regex groups
-        path = match.group(1)
-        line_number = int(match.group(2))
-        row_number = int(match.group(3))
-        code = match.group(4)
-        error = match.group(5)
+class DatabaseConnectionManager:
+    def __init__(self, db_path, backup_path):
+        """
+        Initialize DatabaseConnectionManager with primary and backup database paths
         
-        # Return the extracted information as a dictionary
-        return {
-            "Path of py file": path,
-            "Line number": line_number,
-            "Row number": row_number,
-            "Code": code,
-            "Error": error
-        }
-    else:
-        return None  # Return None if the string doesn't match the expected format
+        :param db_path: Path to the primary database file
+        :param backup_path: Path to the backup database file
+        """
+        self.db_path = db_path
+        self.backup_path = backup_path
+
+    def _is_database_valid(self, db_path):
+        """
+        Check if the database file is valid and not corrupted
+        
+        :param db_path: Path to the database file to check
+        :return: Boolean indicating if the database is valid
+        """
+        try:
+            # Attempt to open the database and perform a simple query
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("PRAGMA quick_check")
+            return True
+        except (sqlite3.DatabaseError, sqlite3.OperationalError):
+            return False
+
+    def _restore_from_backup(self):
+        """
+        Restore the database from the backup file
+        
+        :raises ConnectionError: If backup restoration fails
+        """
+        if not os.path.exists(self.backup_path):
+            raise ConnectionError(f"Backup file {self.backup_path} does not exist")
+        
+        try:
+            # Copy backup file to original database path
+            os.replace(self.backup_path, self.db_path)
+        except Exception as e:
+            raise ConnectionError(f"Failed to restore database from backup: {e}")
+
+    @contextmanager
+    def get_connection(self):
+        """
+        Context manager for database connections with integrity checking and retry logic
+        
+        :raises ConnectionError: If connection fails after max attempts
+        """
+        max_attempts = 3
+        attempt = 0
+        last_error = None
+
+        while attempt < max_attempts:
+            try:
+                # Check if database file exists
+                if not os.path.exists(self.db_path):
+                    # If primary database is missing, try to restore from backup
+                    if os.path.exists(self.backup_path):
+                        self._restore_from_backup()
+                    else:
+                        raise ConnectionError(f"Neither primary database {self.db_path} nor backup {self.backup_path} exist")
+
+                # Validate database integrity
+                if not self._is_database_valid(self.db_path):
+                    # If database is corrupt, try to restore from backup
+                    self._restore_from_backup()
+
+                # Attempt to connect
+                conn = sqlite3.connect(self.db_path, timeout=20)
+                conn.row_factory = sqlite3.Row  # Enable row factory for named columns
+                yield conn
+                return
+            except (sqlite3.OperationalError, ConnectionError) as e:
+                last_error = e
+                attempt += 1
+                time.sleep(1)
+            finally:
+                if 'conn' in locals():
+                    conn.close()
+        
+        raise ConnectionError(f"Failed to connect to database after {max_attempts} attempts: {last_error}")
