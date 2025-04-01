@@ -1,39 +1,32 @@
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QMessageBox
-from PyQt6.QtCore import QObject, pyqtSignal
+# First, add an export button to your UI next to your import button
+# This would go in a similar location to where your import button is defined
 
-class LauncherDB:
-    def export_to_excel(self, filename):
-        # Your existing export code here
-        # ...
-        
-        # Return True if export was successful
-        return True
+self.export_button = QPushButton("Export to Excel")
+self.export_button.clicked.connect(self.export_excel)
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Export Application")
+# Then, add the export_excel method that shows a popup when complete
+
+def export_excel(self):
+    if not self.table_config.excel_support:
+        QMessageBox.warning(self, "Not Supported", "Excel export is not supported for this table.")
+        return
         
-        # Create your launcher DB instance
-        self.launcher_db = LauncherDB()
+    try:
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", "", "Excel Files (*.xlsx)"
+        )
         
-        # Create export button
-        self.export_button = QPushButton("Export to Excel", self)
-        self.export_button.setGeometry(100, 100, 200, 50)
-        
-        # Connect button click to export function
-        self.export_button.clicked.connect(self.handle_export)
-        
-    def handle_export(self):
-        filename = "exported_data.xlsx"  # You might want to get this from a dialog
-        
-        # Call your export function
-        success = self.launcher_db.export_to_excel(filename)
-        
-        # Show popup if successful
-        if success:
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Export Complete")
-            msg_box.setText(f"Data has been successfully exported to {filename}")
-            msg_box.setIcon(QMessageBox.Icon.Information)
-            msg_box.exec()
+        if file_path:
+            if not file_path.endswith('.xlsx'):
+                file_path += '.xlsx'
+                
+            success, message = self.db_manager.export_to_excel(self.table_name, file_path)
+            
+            # Show popup notification on successful export
+            if success:
+                QMessageBox.information(self, "Export Complete", 
+                                      f"Data has been successfully exported to {file_path}")
+            else:
+                QMessageBox.warning(self, "Export Failed", message)
+    except Exception as e:
+        QMessageBox.warning(self, "Error", f"Failed to export Excel file: {e}")
