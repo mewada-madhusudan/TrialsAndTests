@@ -1,19 +1,39 @@
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QMessageBox
+from PyQt6.QtCore import QObject, pyqtSignal
 
 class LauncherDB:
-    # Your existing methods and attributes
-    
     def export_to_excel(self, filename):
         # Your existing export code here
         # ...
         
-        # After export is complete, show a popup
-        self.show_export_complete_popup(filename)
-    
-    def show_export_complete_popup(self, filename):
-        """Shows a popup notification when Excel export is complete."""
-        msg_box = QMessageBox()
-        msg_box.setWindowTitle("Export Complete")
-        msg_box.setText(f"Data has been successfully exported to {filename}")
-        msg_box.setIcon(QMessageBox.Icon.Information)
-        msg_box.exec()
+        # Return True if export was successful
+        return True
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Export Application")
+        
+        # Create your launcher DB instance
+        self.launcher_db = LauncherDB()
+        
+        # Create export button
+        self.export_button = QPushButton("Export to Excel", self)
+        self.export_button.setGeometry(100, 100, 200, 50)
+        
+        # Connect button click to export function
+        self.export_button.clicked.connect(self.handle_export)
+        
+    def handle_export(self):
+        filename = "exported_data.xlsx"  # You might want to get this from a dialog
+        
+        # Call your export function
+        success = self.launcher_db.export_to_excel(filename)
+        
+        # Show popup if successful
+        if success:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Export Complete")
+            msg_box.setText(f"Data has been successfully exported to {filename}")
+            msg_box.setIcon(QMessageBox.Icon.Information)
+            msg_box.exec()
