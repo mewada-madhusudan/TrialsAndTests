@@ -1,235 +1,517 @@
-1. Auto-refresh in a background thread
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+I was thinking to create a ui in python where I can give dropdown options to auditor to select the respective fields and have "ALL" in all dropdowns if they need everything based on selected option if dropdown selection is empty then not to use that column. How can I modify it. I am using sqlitedbEditI'll help you create a more flexible UI for auditors with dropdown filters that include an "ALL" option for each field. This will let users filter reports dynamically without writing any SQL queries. Here's how we can modify the audit reports panel:
 
-class RefreshThread(QThread):
-    apps_changed = pyqtSignal(list)  # Signal to emit when apps have changed
+def setup_audit_reports_panel(self):
+    audit_widget = QFrame()
+    layout = QVBoxLayout(audit_widget)
+    layout.setSpacing(20)
     
-    def __init__(self, db_path, username):
-        super().__init__()
-        self.db_path = db_path
-        self.username = username
-        self.last_known_apps = set()
-        self.running = True
-        
-    def run(self):
-        while self.running:
-            # Create a new database connection in this thread
-            db = Database(self.db_path)
-            current_apps = db.get_user_applications(self.username)
-            current_apps_set = set((name, desc, path) for name, desc, path in current_apps)
+    # Title
+    title = QLabel("Audit Reports")
+    title.setProperty("heading", True)
+    layout.addWidget(title)
+    
+    # Report selection
+    select_layout = QHBoxLayout()
+    
+    report_label = QLabel("Select Report Type:")
+    self.report_combo = QComboBox()
+    self.report_combo.addItems([
+        "Admin Activity Log",
+        "User Access Audit",
+        "Application Access Review",
+        "Application Lifecycle Report",
+        "LoB Application Access",
+        "Cost Center User Access"
+    ])
+    self.report_combo.currentTextChanged.connect(self.change_report_type)
+    
+    select_layout.addWidget(report_label)
+    select_layout.addWidget(self.report_combo)
+    select_layout.addStretch()
+    
+    layout.addLayout(select_layout)
+    
+    # Dynamic filter section
+    self.filter_frame = QFrame()
+    self.filter_layout = QVBoxLayout(self.filter_frame)
+    layout.addWidget(self.filter_frame)
+    
+    # Apply button
+    button_row = QHBoxLayout()
+    apply_btn = QPushButton("Apply Filters")
+    apply_btn.clicked.connect(self.apply_filters)
+    clear_btn = QPushButton("Clear Filters")
+    clear_btn.clicked.connect(self.clear_filters)
+    button_row.addWidget(apply_btn)
+    button_row.addWidget(clear_btn)
+    button_row.addStretch()
+    layout.addLayout(button_row)
+    
+    # Report view
+    self.report_table = QTableWidget()
+    self.report_table.setStyleSheet("""
+        QTableWidget {
+            border: 1px solid #ddd;
+            background-color: white;
+        }
+        QHeaderView::section {
+            background-color: #f5f5f5;
+            padding: 8px;
+            border: none;
+            border-bottom: 1px solid #ddd;
+            font-weight: bold;
+        }
+        QTableWidget::item {
+            padding: 5px;
+        }
+    """)
+    self.report_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)  # Read-only
+    layout.addWidget(self.report_table)
+    
+    # Action buttons
+    button_layout = QHBoxLayout()
+    
+    export_btn = QPushButton("Export to CSV")
+    export_btn.clicked.connect(self.export_report)
+    
+    refresh_btn = QPushButton("Refresh")
+    refresh_btn.clicked.connect(self.refresh_report)
+    
+    button_layout.addWidget(export_btn)
+    button_layout.addWidget(refresh_btn)
+    button_layout.addStretch()
+    
+    layout.addLayout(button_layout)
+    
+    self.right_stack.addWidget(audit_widget)
+    
+    # Initialize the first report type
+    self.change_report_type("Admin Activity Log")
+
+def clear_filters(self):
+    # Reset all filters to "ALL"
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            for j in range(widget.layout().count()):
+                w = widget.layout().itemAt(j).widget()
+                if isinstance(w, QComboBox):
+                    w.setCurrentText("ALL")
+    
+    # Refresh the report with no filters
+    self.apply_filters()
+
+def change_report_type(self, report_type):
+    # Clear existing filters
+    while self.filter_layout.count():
+        child = self.filter_layout.takeAt(0)
+        if child.widget():
+            child.widget().deleteLater()
+    
+    # Add filter dropdowns based on report type
+    if report_type == "Admin Activity Log":
+        self.add_filter_dropdown("Admin Username", self.get_unique_values("admin", "username"))
+        self.add_filter_dropdown("Action", self.get_unique_values("pslv_launch_history", "action"))
+        self.add_date_filter("Action Date")
+    
+    elif report_type == "User Access Audit":
+        self.add_filter_dropdown("User", self.get_unique_values("users", "name"))
+        self.add_filter_dropdown("Application", self.get_unique_values("applications", "solution_name"))
+        self.add_filter_dropdown("Granted By", self.get_unique_values("admin", "username"))
+        self.add_date_filter("Granted Date")
+    
+    elif report_type == "Application Access Review":
+        self.add_filter_dropdown("Application", self.get_unique_values("applications", "solution_name"))
+        self.add_filter_dropdown("Status", self.get_unique_values("applications", "status"))
+        self.add_filter_dropdown("LoB", self.get_unique_values("applications", "lob"))
+    
+    elif report_type == "Application Lifecycle Report":
+        self.add_filter_dropdown("Application", self.get_unique_values("applications", "solution_name"))
+        self.add_filter_dropdown("Status", self.get_unique_values("applications", "status"))
+        self.add_date_filter("Release Date")
+    
+    elif report_type == "LoB Application Access":
+        self.add_filter_dropdown("LoB", self.get_unique_values("applications", "lob"))
+        self.add_filter_dropdown("Application", self.get_unique_values("applications", "solution_name"))
+    
+    elif report_type == "Cost Center User Access":
+        self.add_filter_dropdown("Cost Center", self.get_unique_values("users", "cost_center"))
+        self.add_filter_dropdown("User", self.get_unique_values("users", "name"))
+    
+    # Apply default filters (show all data)
+    self.apply_filters()
+
+def add_filter_dropdown(self, label_text, values):
+    frame = QFrame()
+    layout = QHBoxLayout(frame)
+    layout.setContentsMargins(0, 0, 0, 5)
+    
+    label = QLabel(f"{label_text}:")
+    combo = QComboBox()
+    
+    # Add "ALL" option first
+    combo.addItem("ALL")
+    combo.addItems(values)
+    
+    layout.addWidget(label)
+    layout.addWidget(combo)
+    layout.addStretch()
+    
+    self.filter_layout.addWidget(frame)
+    return combo
+
+def add_date_filter(self, label_text):
+    frame = QFrame()
+    layout = QHBoxLayout(frame)
+    layout.setContentsMargins(0, 0, 0, 5)
+    
+    label = QLabel(f"{label_text}:")
+    
+    from_label = QLabel("From:")
+    from_date = QLineEdit()
+    from_date.setPlaceholderText("YYYY-MM-DD")
+    
+    to_label = QLabel("To:")
+    to_date = QLineEdit()
+    to_date.setPlaceholderText("YYYY-MM-DD")
+    
+    layout.addWidget(label)
+    layout.addWidget(from_label)
+    layout.addWidget(from_date)
+    layout.addWidget(to_label)
+    layout.addWidget(to_date)
+    layout.addStretch()
+    
+    self.filter_layout.addWidget(frame)
+    return from_date, to_date
+
+def get_unique_values(self, table, column):
+    try:
+        cursor = self.db.conn.cursor()
+        cursor.execute(f"SELECT DISTINCT {column} FROM {table} ORDER BY {column}")
+        values = [row[0] for row in cursor.fetchall()]
+        return values
+    except Exception as e:
+        print(f"Error getting unique values: {e}")
+        return []
+
+def apply_filters(self):
+    # Get the current report type
+    report_type = self.report_combo.currentText()
+    
+    # Build query based on report type and filters
+    if report_type == "Admin Activity Log":
+        query, params = self.build_admin_activity_query()
+    elif report_type == "User Access Audit":
+        query, params = self.build_user_access_audit_query()
+    elif report_type == "Application Access Review":
+        query, params = self.build_application_access_review_query()
+    elif report_type == "Application Lifecycle Report":
+        query, params = self.build_application_lifecycle_query()
+    elif report_type == "LoB Application Access":
+        query, params = self.build_lob_application_access_query()
+    elif report_type == "Cost Center User Access":
+        query, params = self.build_cost_center_user_access_query()
+    
+    # Execute query
+    try:
+        df = pd.read_sql_query(query, self.db.conn, params=params)
+        self.display_dataframe(df)
+    except Exception as e:
+        QMessageBox.warning(self, "Query Error", f"Error executing query: {e}")
+        print(f"Query error: {e}")
+
+
+query builder db function 
+def build_admin_activity_query(self):
+    # Get filter values
+    admin_combo = None
+    action_combo = None
+    from_date = None
+    to_date = None
+    
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
             
-            if not self.last_known_apps:
-                # First run, just store the state
-                self.last_known_apps = current_apps_set
-            elif current_apps_set != self.last_known_apps:
-                # Data has changed, notify the main thread
-                self.last_known_apps = current_apps_set
-                self.apps_changed.emit(current_apps)
+            if label_text == "Admin Username:":
+                admin_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Action:":
+                action_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Action Date:":
+                from_date = widget.layout().itemAt(2).widget()
+                to_date = widget.layout().itemAt(4).widget()
+    
+    # Base query
+    query = '''
+        SELECT a.username, p.description, p.action, p.action_date
+        FROM pslv_launch_history p
+        JOIN admin a ON p.sid = a.sid
+        WHERE 1=1
+    '''
+    
+    params = {}
+    
+    # Apply filters
+    if admin_combo and admin_combo.currentText() != "ALL":
+        query += " AND a.username = :admin"
+        params['admin'] = admin_combo.currentText()
+    
+    if action_combo and action_combo.currentText() != "ALL":
+        query += " AND p.action = :action"
+        params['action'] = action_combo.currentText()
+    
+    if from_date and from_date.text():
+        query += " AND p.action_date >= :from_date"
+        params['from_date'] = from_date.text()
+    
+    if to_date and to_date.text():
+        query += " AND p.action_date <= :to_date"
+        params['to_date'] = to_date.text()
+    
+    query += " ORDER BY p.action_date DESC"
+    
+    return query, params
+
+def build_user_access_audit_query(self):
+    # Get filter values
+    user_combo = None
+    app_combo = None
+    granted_by_combo = None
+    from_date = None
+    to_date = None
+    
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
             
-            db.close()
-            # Sleep for 10 seconds
-            for _ in range(10):
-                if not self.running:
-                    break
-                self.msleep(1000)  # Sleep in small chunks to allow stopping the thread quickly
+            if label_text == "User:":
+                user_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Application:":
+                app_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Granted By:":
+                granted_by_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Granted Date:":
+                from_date = widget.layout().itemAt(2).widget()
+                to_date = widget.layout().itemAt(4).widget()
     
-    def stop(self):
-        self.running = False
-
-Now, let's modify the MainWindow to use this thread:
-# In MainWindow class:
-def __init__(self):
-    # ... existing code ...
+    # Base query
+    query = '''
+        SELECT u.sid, u.name, u.email, a.solution_name, ua.granted_date, 
+               adm.username as granted_by
+        FROM user_application_access ua
+        JOIN users u ON ua.user_id = u.sid
+        JOIN applications a ON ua.application_id = a.application_id
+        JOIN admin adm ON ua.granted_by = adm.sid
+        WHERE 1=1
+    '''
     
-    # Set up background refresh thread
-    self.refresh_thread = RefreshThread("launcher.db", self.username)
-    self.refresh_thread.apps_changed.connect(self.handle_apps_changed)
-    self.refresh_thread.start()
-
-def handle_apps_changed(self, new_apps):
-    """Handle applications list changes from the refresh thread"""
-    self.clear_application_grid()
+    params = {}
     
-    # Reload the applications grid with new data
-    for i, (name, desc, shared_path) in enumerate(new_apps):
-        tile = ApplicationTile(name, desc, shared_path)
-        self.app_grid.addWidget(tile, i // 3, i % 3)
+    # Apply filters
+    if user_combo and user_combo.currentText() != "ALL":
+        query += " AND u.name = :user"
+        params['user'] = user_combo.currentText()
     
-    self.adjust_tile_sizes()
+    if app_combo and app_combo.currentText() != "ALL":
+        query += " AND a.solution_name = :app"
+        params['app'] = app_combo.currentText()
     
-    # Notify the user about the change
-    QMessageBox.information(self, "Applications Updated", 
-                           "Your available applications have been updated.")
-
-def closeEvent(self, event):
-    """Stop the refresh thread when closing the application"""
-    self.refresh_thread.stop()
-    self.refresh_thread.wait()  # Wait for the thread to finish
-    event.accept()
-
-
-
-2. Application update in a background thread
-Let's create another thread for checking and handling application updates:
-class UpdateCheckThread(QThread):
-    update_available = pyqtSignal(str, str)  # App name, new version
+    if granted_by_combo and granted_by_combo.currentText() != "ALL":
+        query += " AND adm.username = :admin"
+        params['admin'] = granted_by_combo.currentText()
     
-    def __init__(self, app_name, install_path, db_path):
-        super().__init__()
-        self.app_name = app_name
-        self.install_path = install_path
-        self.db_path = db_path
-        
-    def run(self):
-        # Connect to database to get remote version
-        db = Database(self.db_path)
-        remote_version = db.get_application_version(self.app_name)
-        db.close()
-        
-        # Get local version
-        local_version = self.get_local_version()
-        
-        # Check if update is needed
-        if remote_version and local_version != remote_version:
-            self.update_available.emit(self.app_name, remote_version)
+    if from_date and from_date.text():
+        query += " AND ua.granted_date >= :from_date"
+        params['from_date'] = from_date.text()
     
-    def get_local_version(self):
-        """Get the installed version from a version file"""
-        version_file = os.path.join(self.install_path, "version.txt")
-        if os.path.exists(version_file):
-            with open(version_file, 'r') as f:
-                return f.read().strip()
-        return None
-
-Now, let's modify the ApplicationTile class to use threading for updates:
-
-# In ApplicationTile class:
-def __init__(self, app_name, app_description, shared_drive_path, parent=None):
-    # ... existing code ...
+    if to_date and to_date.text():
+        query += " AND ua.granted_date <= :to_date"
+        params['to_date'] = to_date.text()
     
-    # Setup the update check thread
-    self.update_check_thread = UpdateCheckThread(app_name, self.install_path, "launcher.db")
-    self.update_check_thread.update_available.connect(self.handle_update_available)
+    query += " ORDER BY ua.granted_date DESC"
     
-    # Start the update check if app is installed
-    if self.is_app_installed(f'{self.install_path}.exe'):
-        self.update_check_thread.start()
+    return query, params
 
-def handle_update_available(self, app_name, new_version):
-    """Handle update available signal from the thread"""
-    self.remote_version = new_version
-    self.status_label.setText("Update Available")
-    self.status_label.setStyleSheet("color: orange; font-weight: bold; margin-top: 5px;")
-
-def launch_application(self):
-    """Launch the application, checking for updates first"""
-    executable_path = os.path.join(self.install_path, f"{self.app_name}.exe")
+def build_application_access_review_query(self):
+    # Get filter values
+    app_combo = None
+    status_combo = None
+    lob_combo = None
     
-    # Check if update is needed based on status
-    if self.status_label.text() == "Update Available":
-        # Use a separate thread for closing the application
-        self.close_thread = QThread()
-        self.close_worker = ForceCloseWorker(self.app_name)
-        self.close_worker.moveToThread(self.close_thread)
-        self.close_thread.started.connect(self.close_worker.close_app)
-        self.close_worker.closed.connect(self.handle_app_closed)
-        self.close_worker.closed.connect(self.close_thread.quit)
-        self.close_thread.start()
-    else:
-        # Continue with normal launch
-        if os.path.exists(executable_path):
-            try:
-                os.startfile(executable_path)
-            except Exception as e:
-                QMessageBox.critical(self, 'Error', f'Failed to launch application: {str(e)}')
-        else:
-            QMessageBox.warning(self, 'Error', f'Application executable not found at {executable_path}')
-
-def handle_app_closed(self, success):
-    """Handle when an app has been closed for updating"""
-    if success:
-        reply = QMessageBox.question(self, "Update Available", 
-                               f"A new version of {self.app_name} is available. Would you like to update now?",
-                               QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
+            
+            if label_text == "Application:":
+                app_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Status:":
+                status_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "LoB:":
+                lob_combo = widget.layout().itemAt(1).widget()
     
-        if reply == QMessageBox.StandardButton.Yes:
-            self.install_application()
-        else:
-            # User declined update, launch anyway
-            executable_path = os.path.join(self.install_path, f"{self.app_name}.exe")
-            if os.path.exists(executable_path):
-                try:
-                    os.startfile(executable_path)
-                except Exception as e:
-                    QMessageBox.critical(self, 'Error', f'Failed to launch application: {str(e)}')
-
-
-Let's also create a worker class for force closing applications:
-
-class ForceCloseWorker(QObject):
-    closed = pyqtSignal(bool)  # Signal to indicate completion and success
+    # Base query
+    query = '''
+        SELECT a.application_id, a.solution_name, a.status, a.lob,
+               COUNT(ua.user_id) as user_count,
+               GROUP_CONCAT(u.name, ', ') as users
+        FROM applications a
+        LEFT JOIN user_application_access ua ON a.application_id = ua.application_id
+        LEFT JOIN users u ON ua.user_id = u.sid
+        WHERE 1=1
+    '''
     
-    def __init__(self, app_name):
-        super().__init__()
-        self.app_name = app_name
-        
-    def close_app(self):
-        """Force close any running instance of the application"""
-        import subprocess
-        import psutil
-        
-        app_process_name = f"{self.app_name}.exe"
-        success = False
-        
-        # Find and kill the process
-        for process in psutil.process_iter(['pid', 'name']):
-            try:
-                if process.info['name'] == app_process_name:
-                    # Found the process, terminate it
-                    subprocess.call(['taskkill', '/F', '/PID', str(process.info['pid'])])
-                    success = True
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-        
-        # Emit signal indicating whether we successfully closed anything
-        self.closed.emit(success)
-
-
-Adding the version tracking functionality
-For the Database class, we need to add the version tracking functionality:
-pythonCopy# Add to Database class:
-def get_application_version(self, app_name):
-    """Get the latest version of an application"""
-    self.cursor.execute("""
-        SELECT version FROM applications
-        WHERE name = ?
-    """, (app_name,))
-    result = self.cursor.fetchone()
-    return result[0] if result else None
-Installation finished method update
-Don't forget to update the installation_finished method to save the version information:
-pythonCopydef installation_finished(self):
-    self.installed = True
-    self.status_label.setText("Installed")
-    self.status_label.setStyleSheet("color: green;")
-    self.install_launch_button.setText("Launch")
-    self.progress_bar.setVisible(False)
+    params = {}
     
-    # Save the version information
-    if hasattr(self, 'remote_version') and self.remote_version:
-        version_file = os.path.join(self.install_path, "version.txt")
-        with open(version_file, 'w') as f:
-            f.write(str(self.remote_version))
+    # Apply filters
+    if app_combo and app_combo.currentText() != "ALL":
+        query += " AND a.solution_name = :app"
+        params['app'] = app_combo.currentText()
     
-    QMessageBox.information(self, "Installation Complete", f"{self.app_name} has been successfully installed.")
-Summary of changes
+    if status_combo and status_combo.currentText() != "ALL":
+        query += " AND a.status = :status"
+        params['status'] = status_combo.currentText()
+    
+    if lob_combo and lob_combo.currentText() != "ALL":
+        query += " AND a.lob = :lob"
+        params['lob'] = lob_combo.currentText()
+    
+    query += " GROUP BY a.application_id ORDER BY a.solution_name"
+    
+    return query, params
 
-Added a RefreshThread class to check for application changes in the background
-Added an UpdateCheckThread class to check for application updates in the background
-Added a ForceCloseWorker class to handle closing applications in a separate thread
-Modified the MainWindow and ApplicationTile classes to use these threads
-Made sure database connections are properly closed in each thread
-Added proper cleanup when closing the application
+def build_application_lifecycle_query(self):
+    # Get filter values
+    app_combo = None
+    status_combo = None
+    from_date = None
+    to_date = None
+    
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
+            
+            if label_text == "Application:":
+                app_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Status:":
+                status_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Release Date:":
+                from_date = widget.layout().itemAt(2).widget()
+                to_date = widget.layout().itemAt(4).widget()
+    
+    # Base query
+    query = '''
+        SELECT application_id, solution_name, release_date, 
+               validity_period, status, beta_transition_date
+        FROM applications
+        WHERE 1=1
+    '''
+    
+    params = {}
+    
+    # Apply filters
+    if app_combo and app_combo.currentText() != "ALL":
+        query += " AND solution_name = :app"
+        params['app'] = app_combo.currentText()
+    
+    if status_combo and status_combo.currentText() != "ALL":
+        query += " AND status = :status"
+        params['status'] = status_combo.currentText()
+    
+    if from_date and from_date.text():
+        query += " AND release_date >= :from_date"
+        params['from_date'] = from_date.text()
+    
+    if to_date and to_date.text():
+        query += " AND release_date <= :to_date"
+        params['to_date'] = to_date.text()
+    
+    query += " ORDER BY release_date DESC"
+    
+    return query, params
 
-These changes will keep the UI responsive while performing background tasks, and users will still be able to interact with the launcher while updates and refreshes happen in the background
+def build_lob_application_access_query(self):
+    # Get filter values
+    lob_combo = None
+    app_combo = None
+    
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
+            
+            if label_text == "LoB:":
+                lob_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "Application:":
+                app_combo = widget.layout().itemAt(1).widget()
+    
+    # Base query
+    query = '''
+        SELECT a.lob, a.application_id, a.solution_name,
+               COUNT(ua.user_id) as user_count,
+               GROUP_CONCAT(u.name, ', ') as users
+        FROM applications a
+        LEFT JOIN user_application_access ua ON a.application_id = ua.application_id
+        LEFT JOIN users u ON ua.user_id = u.sid
+        WHERE 1=1
+    '''
+    
+    params = {}
+    
+    # Apply filters
+    if lob_combo and lob_combo.currentText() != "ALL":
+        query += " AND a.lob = :lob"
+        params['lob'] = lob_combo.currentText()
+    
+    if app_combo and app_combo.currentText() != "ALL":
+        query += " AND a.solution_name = :app"
+        params['app'] = app_combo.currentText()
+    
+    query += " GROUP BY a.lob, a.application_id ORDER BY a.lob, a.solution_name"
+    
+    return query, params
+
+def build_cost_center_user_access_query(self):
+    # Get filter values
+    cc_combo = None
+    user_combo = None
+    
+    for i in range(self.filter_layout.count()):
+        widget = self.filter_layout.itemAt(i).widget()
+        if isinstance(widget, QFrame):
+            label_text = widget.layout().itemAt(0).widget().text()
+            
+            if label_text == "Cost Center:":
+                cc_combo = widget.layout().itemAt(1).widget()
+            elif label_text == "User:":
+                user_combo = widget.layout().itemAt(1).widget()
+    
+    # Base query
+    query = '''
+        SELECT u.cost_center, u.sid, u.name,
+               COUNT(ua.application_id) as app_count,
+               GROUP_CONCAT(a.solution_name, ', ') as applications
+        FROM users u
+        LEFT JOIN user_application_access ua ON u.sid = ua.user_id
+        LEFT JOIN applications a ON ua.application_id = a.application_id
+        WHERE 1=1
+    '''
+    
+    params = {}
+    
+    # Apply filters
+    if cc_combo and cc_combo.currentText() != "ALL":
+        query += " AND u.cost_center = :cc"
+        params['cc'] = cc_combo.currentText()
+    
+    if user_combo and user_combo.currentText() != "ALL":
+        query += " AND u.name = :user"
+        params['user'] = user_combo.currentText()
+    
+    query += " GROUP BY u.cost_center, u.sid ORDER BY u.cost_center, u.name"
+    
+    return query, params
