@@ -1,377 +1,278 @@
-# Add these imports at the top of your file
-from datetime import datetime, timedelta
-from PyQt6.QtWidgets import QDateEdit, QComboBox, QMessageBox
-from PyQt6.QtCore import QDate
-
-# Modify the setup_right_panel method to include the new fields
-def setup_right_panel(self):
-    # Add Application/Update Panel with scrolling
-    add_update_widget = QWidget()
-    main_layout = QHBoxLayout(add_update_widget)
-    main_layout.setContentsMargins(0, 0, 0, 0)
-    main_layout.setSpacing(0)
-
-    # Create a scroll area for the form
-    scroll_area = QScrollArea()
-    scroll_area.setWidgetResizable(True)
-    scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    
-    # Create container widget for the form
-    form_container = QWidget()
-    add_layout = QVBoxLayout(form_container)
-    add_layout.setContentsMargins(30, 20, 30, 20)
-    add_layout.setSpacing(20)
-
-    # Title section
-    title = QLabel("Application Details")
-    title.setProperty("heading", True)
-    add_layout.addWidget(title)
-
-    description = QLabel("Enter the application details below.")
-    description.setProperty("subheading", True)
-    add_layout.addWidget(description)
-
-    # Application selection for update mode
-    select_layout = QHBoxLayout()
-    self.update_mode_checkbox = QCheckBox("Update Existing Application")
-    self.app_select_combo = QComboBox()
-    self.app_select_combo.setMinimumWidth(200)
-    self.app_select_combo.setEnabled(False)
-    
-    select_layout.addWidget(self.update_mode_checkbox)
-    select_layout.addWidget(self.app_select_combo)
-    select_layout.addStretch()
-    add_layout.addLayout(select_layout)
-
-    # Form fields
-    # Standard text fields
-    text_fields = [
-        ("application_name", "Application Name", "Enter the name of the application"),
-        ("description", "Application Description", "Enter a brief description"),
-        ("exe_path", "Executable Path", "Enter the full path to the executable"),
-        ("lob", "Line of Business", "Enter the business unit or department"),
-        ("version", "Version", "Enter application version"),
-        ("owner", "Owner", "Enter application owner"),
-        ("support_contact", "Support Contact", "Enter support contact information"),
-        ("deployment_date", "Deployment Date", "Enter deployment date"),
-        ("last_update", "Last Update Date", "Enter last update date"),
-        ("environment", "Environment", "Enter deployment environment"),
-        ("dependencies", "Dependencies", "Enter application dependencies"),
-        ("backup_location", "Backup Location", "Enter backup location"),
-        ("registration_id", "Registration ID", "Enter registration ID once in PROD"),
-        ("sids", "Security IDs", "Enter comma-separated security IDs")
-    ]
-
-    self.add_app_fields = {}
-    for field_name, label_text, placeholder in text_fields:
-        field_layout = QVBoxLayout()
-        field_layout.setSpacing(6)
-
-        label = QLabel(label_text)
-        label.setProperty("fieldLabel", True)
-        
-        line_edit = QLineEdit()
-        line_edit.setPlaceholderText(placeholder)
-        line_edit.setProperty("formInput", True)
-
-        self.add_app_fields[field_name] = line_edit
-        field_layout.addWidget(label)
-        field_layout.addWidget(line_edit)
-
-        add_layout.addLayout(field_layout)
-
-    # Add status combobox
-    status_layout = QVBoxLayout()
-    status_layout.setSpacing(6)
-    status_label = QLabel("Status")
-    status_label.setProperty("fieldLabel", True)
-    self.status_combo = QComboBox()
-    self.status_combo.addItems(["UAT", "PROD"])
-    self.status_combo.setProperty("formInput", True)
-    self.add_app_fields["status"] = self.status_combo  # Store in the same dictionary
-    
-    status_layout.addWidget(status_label)
-    status_layout.addWidget(self.status_combo)
-    add_layout.addLayout(status_layout)
-    
-    # Add validity date field
-    validity_layout = QVBoxLayout()
-    validity_layout.setSpacing(6)
-    validity_label = QLabel("Validity Period")
-    validity_label.setProperty("fieldLabel", True)
-    self.validity_date = QDateEdit()
-    self.validity_date.setCalendarPopup(True)
-    self.validity_date.setDate(QDate.currentDate().addYears(1))  # Default 1 year validity
-    self.validity_date.setProperty("formInput", True)
-    self.add_app_fields["validity_period"] = self.validity_date  # Store in the same dictionary
-    
-    validity_layout.addWidget(validity_label)
-    validity_layout.addWidget(self.validity_date)
-    add_layout.addLayout(validity_layout)
-
-    # Button section
-    button_layout = QHBoxLayout()
-    self.save_btn = QPushButton("Save Application")
-    self.save_btn.setObjectName("actionButton")
-    self.save_btn.setFixedWidth(140)
-    
-    self.clear_btn = QPushButton("Clear Form")
-    self.clear_btn.setObjectName("secondaryButton")
-    self.clear_btn.setFixedWidth(140)
-    
-    button_layout.addStretch()
-    button_layout.addWidget(self.clear_btn)
-    button_layout.addWidget(self.save_btn)
-
-    add_layout.addLayout(button_layout)
-    add_layout.addStretch()
-
-    # Set the form container as the scroll area widget
-    scroll_area.setWidget(form_container)
-    main_layout.addWidget(scroll_area)
-
-    # Connect signals
-    self.update_mode_checkbox.toggled.connect(self.toggle_update_mode)
-    self.app_select_combo.currentTextChanged.connect(self.load_application_data)
-    self.save_btn.clicked.connect(self.save_application)
-    self.clear_btn.clicked.connect(self.clear_form)
-    self.status_combo.currentTextChanged.connect(self.handle_status_change)
-
-    self.right_stack.addWidget(add_update_widget)
-    
-    # Continue with the rest of your existing setup_right_panel code for manage access...
-
-# Initialize the DataFrame with new columns in the __init__ method
-def __init__(self, parent=None):
-    super().__init__(parent)
-    self.setWindowTitle("Access Control")
-    self.setMinimumSize(900, 600)
-    
-    # Update the DataFrame initialization to include the new fields
-    self.df = pd.DataFrame({
-        'application_name': ['App1', 'App2', 'App3'],
-        'description': ['First application description', 'Second application description',
-                        'Third application description'],
-        'exe_path': ['/path1', '/path2', '/path3'],
-        'lob': ['LOB1', 'LOB2', 'LOB1'],
-        'sids': ['SID1,SID2', 'SID3', 'SID4,SID5,SID6'],
-        'status': ['UAT', 'PROD', 'UAT'],
-        'validity_period': [(datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d'),
-                           (datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d'),
-                           (datetime.now() + timedelta(days=365)).strftime('%Y-%m-%d')],
-        'registration_id': ['', 'REG12345', ''],
-        'prod_transition_date': ['', datetime.now().strftime('%Y-%m-%d'), '']
-    })
-    
-    # Track the current user's role (for demo purposes)
-    self.is_super_admin = False  # Toggle this for testing
-    
-    self.setup_ui()
-
-# Add new methods to handle the business logic
-def handle_status_change(self, new_status):
-    """Handle logic when status changes to PROD"""
-    if new_status == "PROD":
-        # Show warning about registration ID requirement
-        QMessageBox.information(
-            self, 
-            "Status Change", 
-            "Changing status to PROD requires Registration ID to be added within 30 days.\n"
-            "Validity period will be locked once saved in PROD status.",
-            QMessageBox.StandardButton.Ok
-        )
-
-def load_application_data(self, app_name):
-    """Load application data with special handling for the new fields"""
-    if not app_name or not self.update_mode_checkbox.isChecked():
-        return
-    
-    app_data = self.df[self.df['application_name'] == app_name].iloc[0]
-    
-    # Check if editing is restricted for this application
-    if self.is_editing_restricted(app_data) and not self.is_super_admin:
-        QMessageBox.warning(
-            self,
-            "Restricted Access",
-            "This application has been in PROD status for over 30 days without a Registration ID.\n"
-            "Only super admins can edit it now.",
-            QMessageBox.StandardButton.Ok
-        )
-        self.clear_form()
-        self.update_mode_checkbox.setChecked(False)
-        return
-    
-    # Load standard text fields
-    for field_name, input_widget in self.add_app_fields.items():
-        if field_name in app_data and field_name not in ["status", "validity_period"]:
-            input_widget.setText(str(app_data[field_name]))
-    
-    # Handle status combobox
-    if 'status' in app_data:
-        self.status_combo.setCurrentText(app_data['status'])
-    
-    # Handle validity date
-    if 'validity_period' in app_data and app_data['validity_period']:
-        try:
-            date_obj = datetime.strptime(app_data['validity_period'], '%Y-%m-%d').date()
-            self.validity_date.setDate(QDate(date_obj.year, date_obj.month, date_obj.day))
-        except (ValueError, TypeError):
-            # Handle invalid date format
-            self.validity_date.setDate(QDate.currentDate().addYears(1))
-    
-    # Lock validity date if in PROD
-    self.validity_date.setEnabled(app_data['status'] != "PROD")
-
-def is_editing_restricted(self, app_data):
-    """Check if editing should be restricted based on the business rules"""
-    # If not in PROD status, no restrictions
-    if app_data['status'] != "PROD":
-        return False
-    
-    # If it has a registration ID, no restrictions
-    if app_data['registration_id']:
-        return False
-    
-    # Check if it's been more than 30 days since PROD transition
-    if app_data['prod_transition_date']:
-        try:
-            transition_date = datetime.strptime(app_data['prod_transition_date'], '%Y-%m-%d')
-            days_since_transition = (datetime.now() - transition_date).days
-            return days_since_transition > 30
-        except (ValueError, TypeError):
-            return False
-    
-    return False
-
-def save_application(self):
-    """Save application with the new business logic"""
-    is_update_mode = self.update_mode_checkbox.isChecked()
-    
-    # Collect form data
-    new_data = {}
-    for field, widget in self.add_app_fields.items():
-        if field == "status":
-            new_data[field] = widget.currentText()
-        elif field == "validity_period":
-            new_data[field] = widget.date().toString("yyyy-MM-dd")
-        else:
-            new_data[field] = widget.text()
-    
-    if not new_data["application_name"]:
-        QMessageBox.warning(self, "Required Field",
-                          "Application Name is required.",
-                          QMessageBox.StandardButton.Ok)
-        return
-    
-    # Check if transitioning to PROD status
-    is_prod_transition = False
-    
-    if is_update_mode:
-        # Update existing application
-        app_name = self.app_select_combo.currentText()
-        idx = self.df[self.df['application_name'] == app_name].index[0]
-        
-        # Check if status is changing from UAT to PROD
-        current_status = self.df.at[idx, 'status']
-        new_status = new_data["status"]
-        
-        if current_status != "PROD" and new_status == "PROD":
-            is_prod_transition = True
-            new_data["prod_transition_date"] = datetime.now().strftime('%Y-%m-%d')
-        
-        # Update the dataframe
-        for field, value in new_data.items():
-            if field in self.df.columns:
-                self.df.at[idx, field] = value
-    else:
-        # Add new application
-        if new_data["status"] == "PROD":
-            new_data["prod_transition_date"] = datetime.now().strftime('%Y-%m-%d')
-        else:
-            new_data["prod_transition_date"] = ""
-            
-        self.df = pd.concat([self.df, pd.DataFrame([new_data])], ignore_index=True)
-
-    # Update UI
-    self.update_app_list()
-    self.clear_form()
-    
-    # Show appropriate success message
-    if is_prod_transition:
-        self.show_success_message(
-            "Application has been moved to PROD status.\n"
-            "Remember to add a Registration ID within 30 days to maintain edit access."
-        )
-    else:
-        action = "updated" if is_update_mode else "added"
-        self.show_success_message(f"Application has been {action} successfully!")
-
-def clear_form(self):
-    """Clear form with special handling for new field types"""
-    for field, widget in self.add_app_fields.items():
-        if field == "status":
-            widget.setCurrentText("UAT")  # Default to UAT
-        elif field == "validity_period":
-            widget.setDate(QDate.currentDate().addYears(1))  # Reset to default 1 year from now
-        else:
-            widget.clear()
-    
-    # Reset the validity date to be editable
-    self.validity_date.setEnabled(True)
-    self.update_mode_checkbox.setChecked(False)
-
-# Add these styles to your apply_styles method
-def apply_styles(self):
-    # Keep your existing styles
-    additional_styles = """
-        QDateEdit {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 8px;
-            min-height: 36px;
-        }
-        QDateEdit::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: center right;
-            width: 20px;
-            border-left: 1px solid #e0e0e0;
-        }
-        QDateEdit:disabled {
-            background-color: #f5f5f5;
-            color: #999;
-        }
-        QLabel[warning="true"] {
-            color: #f44336;
-            font-weight: bold;
-        }
-        QComboBox {
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            padding: 8px;
-            min-height: 36px;
-            background: white;
-        }
-        QComboBox:disabled {
-            background: #f5f5f5;
-        }
-        QComboBox::drop-down {
-            subcontrol-origin: padding;
-            subcontrol-position: center right;
-            width: 20px;
-            border-left: 1px solid #e0e0e0;
-        }
+def build_admin_activity_query(self):
+    """Build query for Admin Activity Log report with filters from grid layout"""
+    query = """
+        SELECT a.username AS "Admin", 
+               h.action AS "Action", 
+               h.timestamp AS "Timestamp", 
+               h.details AS "Details"
+        FROM pslv_launch_history h
+        JOIN admin a ON h.admin_id = a.id
+        WHERE 1=1
     """
-    # Add the additional styles to your existing stylesheet
-    current_style = self.styleSheet()
-    self.setStyleSheet(current_style + additional_styles)
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    admin_filter = self.get_filter_value("Admin Username")
+    action_filter = self.get_filter_value("Action")
+    date_from, date_to = self.get_date_filter_values("Action Date")
+    
+    # Add filter conditions
+    if admin_filter != "ALL":
+        query += " AND a.username = :admin"
+        params["admin"] = admin_filter
+    
+    if action_filter != "ALL":
+        query += " AND h.action = :action"
+        params["action"] = action_filter
+    
+    if date_from:
+        query += " AND h.timestamp >= :date_from"
+        params["date_from"] = date_from
+    
+    if date_to:
+        query += " AND h.timestamp <= :date_to"
+        params["date_to"] = date_to
+    
+    query += " ORDER BY h.timestamp DESC"
+    
+    return query, params
 
-# Add a toggle method for testing super admin role
-def toggle_super_admin(self):
-    self.is_super_admin = not self.is_super_admin
-    status = "enabled" if self.is_super_admin else "disabled"
-    QMessageBox.information(
-        self,
-        "Super Admin Mode",
-        f"Super admin mode {status}",
-        QMessageBox.StandardButton.Ok
-    )
+def build_user_access_audit_query(self):
+    """Build query for User Access Audit report with filters from grid layout"""
+    query = """
+        SELECT u.name AS "User Name", 
+               a.solution_name AS "Application", 
+               ua.granted_date AS "Access Granted Date",
+               adm.username AS "Granted By"
+        FROM user_access ua
+        JOIN users u ON ua.user_id = u.id
+        JOIN applications a ON ua.app_id = a.id
+        JOIN admin adm ON ua.granted_by = adm.id
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    user_filter = self.get_filter_value("User")
+    app_filter = self.get_filter_value("Application")
+    admin_filter = self.get_filter_value("Granted By")
+    date_from, date_to = self.get_date_filter_values("Granted Date")
+    
+    # Add filter conditions
+    if user_filter != "ALL":
+        query += " AND u.name = :user"
+        params["user"] = user_filter
+    
+    if app_filter != "ALL":
+        query += " AND a.solution_name = :app"
+        params["app"] = app_filter
+    
+    if admin_filter != "ALL":
+        query += " AND adm.username = :admin"
+        params["admin"] = admin_filter
+    
+    if date_from:
+        query += " AND ua.granted_date >= :date_from"
+        params["date_from"] = date_from
+    
+    if date_to:
+        query += " AND ua.granted_date <= :date_to"
+        params["date_to"] = date_to
+    
+    query += " ORDER BY ua.granted_date DESC"
+    
+    return query, params
+
+def build_application_access_review_query(self):
+    """Build query for Application Access Review report with filters from grid layout"""
+    query = """
+        SELECT a.solution_name AS "Application",
+               a.status AS "Status",
+               a.lob AS "Line of Business",
+               COUNT(ua.id) AS "User Count"
+        FROM applications a
+        LEFT JOIN user_access ua ON a.id = ua.app_id
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    app_filter = self.get_filter_value("Application")
+    status_filter = self.get_filter_value("Status")
+    lob_filter = self.get_filter_value("LoB")
+    
+    # Add filter conditions
+    if app_filter != "ALL":
+        query += " AND a.solution_name = :app"
+        params["app"] = app_filter
+    
+    if status_filter != "ALL":
+        query += " AND a.status = :status"
+        params["status"] = status_filter
+    
+    if lob_filter != "ALL":
+        query += " AND a.lob = :lob"
+        params["lob"] = lob_filter
+    
+    query += " GROUP BY a.solution_name, a.status, a.lob ORDER BY a.solution_name"
+    
+    return query, params
+
+def build_application_lifecycle_query(self):
+    """Build query for Application Lifecycle Report with filters from grid layout"""
+    query = """
+        SELECT a.solution_name AS "Application",
+               a.status AS "Status",
+               a.release_date AS "Release Date",
+               a.last_review_date AS "Last Review Date",
+               a.next_review_date AS "Next Review Date"
+        FROM applications a
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    app_filter = self.get_filter_value("Application")
+    status_filter = self.get_filter_value("Status")
+    date_from, date_to = self.get_date_filter_values("Release Date")
+    
+    # Add filter conditions
+    if app_filter != "ALL":
+        query += " AND a.solution_name = :app"
+        params["app"] = app_filter
+    
+    if status_filter != "ALL":
+        query += " AND a.status = :status"
+        params["status"] = status_filter
+    
+    if date_from:
+        query += " AND a.release_date >= :date_from"
+        params["date_from"] = date_from
+    
+    if date_to:
+        query += " AND a.release_date <= :date_to"
+        params["date_to"] = date_to
+    
+    query += " ORDER BY a.solution_name"
+    
+    return query, params
+
+def build_lob_application_access_query(self):
+    """Build query for LoB Application Access report with filters from grid layout"""
+    query = """
+        SELECT a.lob AS "Line of Business",
+               a.solution_name AS "Application",
+               COUNT(ua.id) AS "User Count"
+        FROM applications a
+        LEFT JOIN user_access ua ON a.id = ua.app_id
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    lob_filter = self.get_filter_value("LoB")
+    app_filter = self.get_filter_value("Application")
+    
+    # Add filter conditions
+    if lob_filter != "ALL":
+        query += " AND a.lob = :lob"
+        params["lob"] = lob_filter
+    
+    if app_filter != "ALL":
+        query += " AND a.solution_name = :app"
+        params["app"] = app_filter
+    
+    query += " GROUP BY a.lob, a.solution_name ORDER BY a.lob, a.solution_name"
+    
+    return query, params
+
+def build_cost_center_user_access_query(self):
+    """Build query for Cost Center User Access report with filters from grid layout"""
+    query = """
+        SELECT u.cost_center AS "Cost Center",
+               u.name AS "User Name",
+               COUNT(ua.id) AS "Application Count"
+        FROM users u
+        LEFT JOIN user_access ua ON u.id = ua.user_id
+        WHERE 1=1
+    """
+    
+    params = {}
+    
+    # Get filter values from grid layout
+    cc_filter = self.get_filter_value("Cost Center")
+    user_filter = self.get_filter_value("User")
+    
+    # Add filter conditions
+    if cc_filter != "ALL":
+        query += " AND u.cost_center = :cc"
+        params["cc"] = cc_filter
+    
+    if user_filter != "ALL":
+        query += " AND u.name = :user"
+        params["user"] = user_filter
+    
+    query += " GROUP BY u.cost_center, u.name ORDER BY u.cost_center, u.name"
+    
+    return query, params
+
+def get_filter_value(self, label_text):
+    """
+    Find a filter dropdown by label text and return its value
+    Works with grid layout
+    """
+    # Search through all grid items for the matching label
+    for row in range(self.filter_layout.rowCount()):
+        for col in range(0, self.filter_layout.columnCount(), 2):  # Step by 2 since labels are in even columns
+            label_item = self.filter_layout.itemAtPosition(row, col)
+            if label_item and label_item.widget():
+                label = label_item.widget()
+                if isinstance(label, QLabel) and label.text().startswith(f"{label_text}:"):
+                    # Found label, get the corresponding combobox
+                    combo_item = self.filter_layout.itemAtPosition(row, col + 1)
+                    if combo_item and combo_item.widget():
+                        widget = combo_item.widget()
+                        if isinstance(widget, QComboBox):
+                            return widget.currentText()
+                        elif isinstance(widget, QFrame):  # For date filters
+                            # This is a container for date widgets
+                            # For date filters we return None here since they're handled separately
+                            return None
+    
+    return "ALL"  # Default if not found
+
+def get_date_filter_values(self, label_text):
+    """
+    Find date filter inputs by label text and return from/to values
+    Works with grid layout
+    """
+    for row in range(self.filter_layout.rowCount()):
+        for col in range(0, self.filter_layout.columnCount(), 2):  # Step by 2 since labels are in even columns
+            label_item = self.filter_layout.itemAtPosition(row, col)
+            if label_item and label_item.widget():
+                label = label_item.widget()
+                if isinstance(label, QLabel) and label.text().startswith(f"{label_text}:"):
+                    # Found label, get the corresponding date container
+                    container_item = self.filter_layout.itemAtPosition(row, col + 1)
+                    if container_item and container_item.widget():
+                        container = container_item.widget()
+                        if isinstance(container, QFrame):
+                            # Find the date inputs within the container
+                            date_inputs = []
+                            layout = container.layout()
+                            for i in range(layout.count()):
+                                widget = layout.itemAt(i).widget()
+                                if isinstance(widget, QDateEdit):
+                                    date_inputs.append(widget)
+                            
+                            if len(date_inputs) >= 2:
+                                from_date = date_inputs[0].date().toString("yyyy-MM-dd")
+                                to_date = date_inputs[1].date().toString("yyyy-MM-dd")
+                                return from_date, to_date
+    
+    return None, None  # Default if not found
