@@ -1,278 +1,116 @@
-def build_admin_activity_query(self):
-    """Build query for Admin Activity Log report with filters from grid layout"""
-    query = """
-        SELECT a.username AS "Admin", 
-               h.action AS "Action", 
-               h.timestamp AS "Timestamp", 
-               h.details AS "Details"
-        FROM pslv_launch_history h
-        JOIN admin a ON h.admin_id = a.id
-        WHERE 1=1
-    """
+def import_from_excel(self, table_name, file_path):
+    table_config = self.table_configs.get(table_name)
+    if not table_config or not table_config.excel_support:
+        return False, "Excel import not supported for this table"
     
-    params = {}
-    
-    # Get filter values from grid layout
-    admin_filter = self.get_filter_value("Admin Username")
-    action_filter = self.get_filter_value("Action")
-    date_from, date_to = self.get_date_filter_values("Action Date")
-    
-    # Add filter conditions
-    if admin_filter != "ALL":
-        query += " AND a.username = :admin"
-        params["admin"] = admin_filter
-    
-    if action_filter != "ALL":
-        query += " AND h.action = :action"
-        params["action"] = action_filter
-    
-    if date_from:
-        query += " AND h.timestamp >= :date_from"
-        params["date_from"] = date_from
-    
-    if date_to:
-        query += " AND h.timestamp <= :date_to"
-        params["date_to"] = date_to
-    
-    query += " ORDER BY h.timestamp DESC"
-    
-    return query, params
-
-def build_user_access_audit_query(self):
-    """Build query for User Access Audit report with filters from grid layout"""
-    query = """
-        SELECT u.name AS "User Name", 
-               a.solution_name AS "Application", 
-               ua.granted_date AS "Access Granted Date",
-               adm.username AS "Granted By"
-        FROM user_access ua
-        JOIN users u ON ua.user_id = u.id
-        JOIN applications a ON ua.app_id = a.id
-        JOIN admin adm ON ua.granted_by = adm.id
-        WHERE 1=1
-    """
-    
-    params = {}
-    
-    # Get filter values from grid layout
-    user_filter = self.get_filter_value("User")
-    app_filter = self.get_filter_value("Application")
-    admin_filter = self.get_filter_value("Granted By")
-    date_from, date_to = self.get_date_filter_values("Granted Date")
-    
-    # Add filter conditions
-    if user_filter != "ALL":
-        query += " AND u.name = :user"
-        params["user"] = user_filter
-    
-    if app_filter != "ALL":
-        query += " AND a.solution_name = :app"
-        params["app"] = app_filter
-    
-    if admin_filter != "ALL":
-        query += " AND adm.username = :admin"
-        params["admin"] = admin_filter
-    
-    if date_from:
-        query += " AND ua.granted_date >= :date_from"
-        params["date_from"] = date_from
-    
-    if date_to:
-        query += " AND ua.granted_date <= :date_to"
-        params["date_to"] = date_to
-    
-    query += " ORDER BY ua.granted_date DESC"
-    
-    return query, params
-
-def build_application_access_review_query(self):
-    """Build query for Application Access Review report with filters from grid layout"""
-    query = """
-        SELECT a.solution_name AS "Application",
-               a.status AS "Status",
-               a.lob AS "Line of Business",
-               COUNT(ua.id) AS "User Count"
-        FROM applications a
-        LEFT JOIN user_access ua ON a.id = ua.app_id
-        WHERE 1=1
-    """
-    
-    params = {}
-    
-    # Get filter values from grid layout
-    app_filter = self.get_filter_value("Application")
-    status_filter = self.get_filter_value("Status")
-    lob_filter = self.get_filter_value("LoB")
-    
-    # Add filter conditions
-    if app_filter != "ALL":
-        query += " AND a.solution_name = :app"
-        params["app"] = app_filter
-    
-    if status_filter != "ALL":
-        query += " AND a.status = :status"
-        params["status"] = status_filter
-    
-    if lob_filter != "ALL":
-        query += " AND a.lob = :lob"
-        params["lob"] = lob_filter
-    
-    query += " GROUP BY a.solution_name, a.status, a.lob ORDER BY a.solution_name"
-    
-    return query, params
-
-def build_application_lifecycle_query(self):
-    """Build query for Application Lifecycle Report with filters from grid layout"""
-    query = """
-        SELECT a.solution_name AS "Application",
-               a.status AS "Status",
-               a.release_date AS "Release Date",
-               a.last_review_date AS "Last Review Date",
-               a.next_review_date AS "Next Review Date"
-        FROM applications a
-        WHERE 1=1
-    """
-    
-    params = {}
-    
-    # Get filter values from grid layout
-    app_filter = self.get_filter_value("Application")
-    status_filter = self.get_filter_value("Status")
-    date_from, date_to = self.get_date_filter_values("Release Date")
-    
-    # Add filter conditions
-    if app_filter != "ALL":
-        query += " AND a.solution_name = :app"
-        params["app"] = app_filter
-    
-    if status_filter != "ALL":
-        query += " AND a.status = :status"
-        params["status"] = status_filter
-    
-    if date_from:
-        query += " AND a.release_date >= :date_from"
-        params["date_from"] = date_from
-    
-    if date_to:
-        query += " AND a.release_date <= :date_to"
-        params["date_to"] = date_to
-    
-    query += " ORDER BY a.solution_name"
-    
-    return query, params
-
-def build_lob_application_access_query(self):
-    """Build query for LoB Application Access report with filters from grid layout"""
-    query = """
-        SELECT a.lob AS "Line of Business",
-               a.solution_name AS "Application",
-               COUNT(ua.id) AS "User Count"
-        FROM applications a
-        LEFT JOIN user_access ua ON a.id = ua.app_id
-        WHERE 1=1
-    """
-    
-    params = {}
-    
-    # Get filter values from grid layout
-    lob_filter = self.get_filter_value("LoB")
-    app_filter = self.get_filter_value("Application")
-    
-    # Add filter conditions
-    if lob_filter != "ALL":
-        query += " AND a.lob = :lob"
-        params["lob"] = lob_filter
-    
-    if app_filter != "ALL":
-        query += " AND a.solution_name = :app"
-        params["app"] = app_filter
-    
-    query += " GROUP BY a.lob, a.solution_name ORDER BY a.lob, a.solution_name"
-    
-    return query, params
-
-def build_cost_center_user_access_query(self):
-    """Build query for Cost Center User Access report with filters from grid layout"""
-    query = """
-        SELECT u.cost_center AS "Cost Center",
-               u.name AS "User Name",
-               COUNT(ua.id) AS "Application Count"
-        FROM users u
-        LEFT JOIN user_access ua ON u.id = ua.user_id
-        WHERE 1=1
-    """
-    
-    params = {}
-    
-    # Get filter values from grid layout
-    cc_filter = self.get_filter_value("Cost Center")
-    user_filter = self.get_filter_value("User")
-    
-    # Add filter conditions
-    if cc_filter != "ALL":
-        query += " AND u.cost_center = :cc"
-        params["cc"] = cc_filter
-    
-    if user_filter != "ALL":
-        query += " AND u.name = :user"
-        params["user"] = user_filter
-    
-    query += " GROUP BY u.cost_center, u.name ORDER BY u.cost_center, u.name"
-    
-    return query, params
-
-def get_filter_value(self, label_text):
-    """
-    Find a filter dropdown by label text and return its value
-    Works with grid layout
-    """
-    # Search through all grid items for the matching label
-    for row in range(self.filter_layout.rowCount()):
-        for col in range(0, self.filter_layout.columnCount(), 2):  # Step by 2 since labels are in even columns
-            label_item = self.filter_layout.itemAtPosition(row, col)
-            if label_item and label_item.widget():
-                label = label_item.widget()
-                if isinstance(label, QLabel) and label.text().startswith(f"{label_text}:"):
-                    # Found label, get the corresponding combobox
-                    combo_item = self.filter_layout.itemAtPosition(row, col + 1)
-                    if combo_item and combo_item.widget():
-                        widget = combo_item.widget()
-                        if isinstance(widget, QComboBox):
-                            return widget.currentText()
-                        elif isinstance(widget, QFrame):  # For date filters
-                            # This is a container for date widgets
-                            # For date filters we return None here since they're handled separately
-                            return None
-    
-    return "ALL"  # Default if not found
-
-def get_date_filter_values(self, label_text):
-    """
-    Find date filter inputs by label text and return from/to values
-    Works with grid layout
-    """
-    for row in range(self.filter_layout.rowCount()):
-        for col in range(0, self.filter_layout.columnCount(), 2):  # Step by 2 since labels are in even columns
-            label_item = self.filter_layout.itemAtPosition(row, col)
-            if label_item and label_item.widget():
-                label = label_item.widget()
-                if isinstance(label, QLabel) and label.text().startswith(f"{label_text}:"):
-                    # Found label, get the corresponding date container
-                    container_item = self.filter_layout.itemAtPosition(row, col + 1)
-                    if container_item and container_item.widget():
-                        container = container_item.widget()
-                        if isinstance(container, QFrame):
-                            # Find the date inputs within the container
-                            date_inputs = []
-                            layout = container.layout()
-                            for i in range(layout.count()):
-                                widget = layout.itemAt(i).widget()
-                                if isinstance(widget, QDateEdit):
-                                    date_inputs.append(widget)
-                            
-                            if len(date_inputs) >= 2:
-                                from_date = date_inputs[0].date().toString("yyyy-MM-dd")
-                                to_date = date_inputs[1].date().toString("yyyy-MM-dd")
-                                return from_date, to_date
-    
-    return None, None  # Default if not found
+    try:
+        # Read Excel file
+        df = pd.read_excel(file_path)
+        
+        # Map display names to DB column names
+        display_to_db = {col[1]: col[0] for col in table_config.columns}
+        db_to_type = {col[0]: col[2] for col in table_config.columns}
+        
+        # Get primary key info
+        primary_key = table_config.primary_key
+        primary_key_display = None
+        for col in table_config.columns:
+            if col[0] == primary_key:
+                primary_key_display = col[1]
+                break
+        
+        if not primary_key_display or primary_key_display not in df.columns:
+            return False, f"Primary key column '{primary_key_display}' not found in Excel file"
+        
+        cursor = self.conn.cursor()
+        
+        # Get existing records for checking duplicates
+        existing_records = {}
+        cursor.execute(f"SELECT {primary_key} FROM {table_name} WHERE is_active = 1")
+        for row in cursor.fetchall():
+            existing_records[row[0]] = True
+        
+        # Process each row
+        new_count = 0
+        update_count = 0
+        
+        for _, row in df.iterrows():
+            # Get primary key value for this row
+            pk_value = row.get(primary_key_display)
+            if pd.isna(pk_value):
+                continue  # Skip rows without primary key
+            
+            pk_value = str(pk_value) if pk_value is not None else ""
+            
+            # Check if record exists
+            record_exists = pk_value in existing_records
+            
+            # Prepare column names and values
+            db_columns = []
+            values = []
+            
+            # First, get all available columns from Excel
+            excel_values = {}
+            for display_name, db_name in display_to_db.items():
+                if display_name in df.columns:
+                    value = row.get(display_name)
+                    data_type = db_to_type.get(db_name)
+                    
+                    # Handle data type conversion
+                    if data_type == "REAL" and pd.notna(value):
+                        try:
+                            excel_values[db_name] = float(value)
+                        except (ValueError, TypeError):
+                            excel_values[db_name] = 0.0
+                    elif data_type == "INTEGER" and pd.notna(value):
+                        try:
+                            excel_values[db_name] = int(value)
+                        except (ValueError, TypeError):
+                            excel_values[db_name] = 0
+                    else:
+                        excel_values[db_name] = str(value) if pd.notna(value) else ""
+            
+            if record_exists:
+                # Update existing record
+                set_clauses = []
+                update_values = []
+                
+                for db_name, value in excel_values.items():
+                    if db_name != primary_key:  # Don't update primary key
+                        set_clauses.append(f"{db_name} = ?")
+                        update_values.append(value)
+                
+                # Always update modified date
+                set_clauses.append("modified_date = CURRENT_TIMESTAMP")
+                
+                # Add primary key value for WHERE clause
+                update_values.append(pk_value)
+                
+                # Execute UPDATE
+                if set_clauses:
+                    sql = f"""
+                        UPDATE {table_name} 
+                        SET {', '.join(set_clauses)}
+                        WHERE {primary_key} = ? AND is_active = 1
+                    """
+                    cursor.execute(sql, update_values)
+                    update_count += 1
+            else:
+                # Insert new record
+                db_columns = list(excel_values.keys())
+                values = [excel_values[col] for col in db_columns]
+                
+                if db_columns:
+                    # Insert into database
+                    columns_str = ", ".join(db_columns)
+                    placeholders = ", ".join(["?" for _ in db_columns])
+                    
+                    sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+                    cursor.execute(sql, values)
+                    new_count += 1
+                    existing_records[pk_value] = True  # Add to existing records
+        
+        self.conn.commit()
+        return True, f"Import completed: {new_count} new records added, {update_count} records updated"
+    except Exception as e:
+        return False, f"Error importing from Excel: {e}"
