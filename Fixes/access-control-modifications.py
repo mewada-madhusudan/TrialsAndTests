@@ -21,25 +21,19 @@ def import_from_excel(self, table_name, file_path):
         
         cursor = self.conn.cursor()
         
-        # Get existing records data for matching
-        existing_records = {}
-        
-        # Get all existing records with their attributes
-        columns_str = ", ".join([col[0] for col in table_config.columns])
-        cursor.execute(f"SELECT id, {columns_str} FROM {table_name} WHERE is_active = 1")
-        columns = [desc[0] for desc in cursor.description]
-        
+        # Get existing primary keys
+        existing_records = set()
+        cursor.execute(f"SELECT {primary_key} FROM {table_name} WHERE is_active = 1")
         for row in cursor.fetchall():
-            record_data = dict(zip(columns, row))
-            # Store by database ID and keep full record data
-            existing_records[record_data['id']] = record_data
+            if row[0]:  # Only add non-empty values
+                existing_records.add(str(row[0]))
         
         # Process each row
         new_count = 0
         update_count = 0
         
         for _, row in df.iterrows():
-            # Convert Excel row to database format
+            # Convert Excel row to database column format
             db_values = {}
             for display_name, db_name in display_to_db.items():
                 if display_name in df.columns and not pd.isna(row.get(display_name)):
@@ -60,69 +54,50 @@ def import_from_excel(self, table_name, file_path):
                     else:
                         db_values[db_name] = str(value)
             
-            # Try to find a matching record
-            matching_id = None
-            
-            # Use primary key for matching if it exists in the Excel data
-            if primary_key_display in df.columns and primary_key in db_values:
-                pk_value = db_values[primary_key]
-                # Look for a record with matching primary key
-                for record_id, record_data in existing_records.items():
-                    if str(record_data[primary_key]) == str(pk_value):
-                        matching_id = record_id
-                        break
-            
-            # If no match by primary key, try to match by other "unique" columns
-            # This is a simplified approach - you might need to define which columns 
-            # should be used for matching in your system
-            if matching_id is None and db_values:
-                potential_matches = []
-                for record_id, record_data in existing_records.items():
-                    match_score = 0
-                    for db_col, value in db_values.items():
-                        if db_col in record_data and str(record_data[db_col]) == str(value):
-                            match_score += 1
-                    
-                    # If multiple columns match, consider it a potential match
-                    if match_score >= min(2, len(db_values)):
-                        potential_matches.append((record_id, match_score))
+            # Check if primary key exists and is in Excel
+            pk_value = None
+            if primary_key in db_values:
+                pk_value = str(db_values[primary_key])
                 
-                # Get the best match if any
-                if potential_matches:
-                    potential_matches.sort(key=lambda x: x[1], reverse=True)
-                    matching_id = potential_matches[0][0]
-            
-            if matching_id is not None:
-                # Update existing record
+            # Decide whether to update or insert
+            if pk_value and pk_value in existing_records:
+                # UPDATE: Record with this primary key exists
                 set_clauses = []
                 update_values = []
                 
                 for db_name, value in db_values.items():
-                    set_clauses.append(f"{db_name} = ?")
-                    update_values.append(value)
+                    if db_name != primary_key:  # Don't update primary key
+                        set_clauses.append(f"{db_name} = ?")
+                        update_values.append(value)
                 
                 # Always update modified date
                 set_clauses.append("modified_date = CURRENT_TIMESTAMP")
+                
+                # Add primary key for WHERE clause
+                update_values.append(pk_value)
                 
                 # Execute UPDATE
                 if set_clauses:
                     sql = f"""
                         UPDATE {table_name} 
                         SET {', '.join(set_clauses)}
-                        WHERE id = ?
+                        WHERE {primary_key} = ? AND is_active = 1
                     """
-                    update_values.append(matching_id)
                     cursor.execute(sql, update_values)
                     update_count += 1
             else:
-                # Insert new record
+                # INSERT: No matching record found, or primary key not in Excel
                 if db_values:
-                    # Insert into database
-                    columns_str = ", ".join(db_values.keys())
-                    placeholders = ", ".join(["?" for _ in db_values])
-                    values = list(db_values.values())
+                    # Remove primary key if it's empty or null
+                    if primary_key in db_values and not db_values[primary_key]:
+                        del db_values[primary_key]
                     
-                    sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})"
+                    # Insert into database
+                    columns = list(db_values.keys())
+                    placeholders = ", ".join(["?" for _ in columns])
+                    values = [db_values[col] for col in columns]
+                    
+                    sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
                     cursor.execute(sql, values)
                     new_count += 1
         
