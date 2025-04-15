@@ -8,9 +8,9 @@ We'll need to:
 Add functionality to connect using different credentials
 Modify the connection mechanism to use these credentials when accessing the shared drive
 Here's my proposed solution:
-
-
 #python
+
+
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -228,9 +228,13 @@ class LauncherDB:
         with self.get_connection() as conn:
             conn.execute(query, (user_sid, app_id))
             conn.commit()
+
+            
 How to use the updated code:
-python
+# python
 # Example usage with functional account credentials
+
+
 db = LauncherDB(
     db_path="\\\\server\\share\\path\\to\\database.db",
     functional_username="domain\\functional_user",
@@ -239,6 +243,8 @@ db = LauncherDB(
 
 # Use the database as before
 apps = db.get_user_applications("S-1-5-21-123456789-0987654321-123456789-1234")
+
+
 Key changes made:
 Added support for functional account credentials in the constructor
 Created methods to:
@@ -285,6 +291,8 @@ Restores from backup if a sync operation fails
 Provides informative diagnostics about sync status
 Usage Examples:
 python
+
+
 # Basic usage with functional account
 db = LauncherDB(
     db_path="\\\\server\\share\\path\\to\\database.db",
@@ -301,16 +309,11 @@ apps = db.get_user_applications("S-1-5-21-123456789-0987654321-123456789-1234")
 
 # Force a sync if needed
 db.force_sync()
+
+
 This approach gives you the best of both worlds - local performance with network synchronization, all while maintaining compatibility with your existing code. The solution handles intermittent network connectivity gracefully and provides mechanisms to ensure data integrity.
 
 
-
-
-
-Refresh and force close.md
-236 lines
-
-md
 
 I have a refresh thread class that checks changes in db and returns updated application records as df in current app. But now there is this access issues and we are thinking to keep a local copy how will we main it. Just say another users modify records in share drive db how will it replicate in local copy and ui then
 
@@ -354,7 +357,9 @@ Changes made by the current user are pushed back to the source
 Changes made by other users are pulled from the source during sync checks
 UI refreshes automatically when changes are detected
 Example Usage
-python
+
+# python
+
 from PyQt6.QtWidgets import QApplication
 import sys
 from main_window import MainWindow
@@ -377,6 +382,8 @@ window = MainWindow(
 )
 window.show()
 sys.exit(app.exec())
+
+
 This solution gives you the best of both worlds - the application remains responsive and works even when the network drive is temporarily unavailable, while still keeping data synchronized with all users when connectivity is restored.
 
 
