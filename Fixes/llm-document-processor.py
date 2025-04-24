@@ -124,13 +124,16 @@ class DocumentProcessorApp(QMainWindow):
         left_layout.addWidget(self.results_table)
         
         # Right side - PDF viewer
-        self.pdf_viewer = QPdfView()
-        self.pdf_document = QPdfDocument()
+        right_widget = QWidget()  # Create a container for the PDF viewer
+        right_layout = QVBoxLayout(right_widget)
+        self.pdf_viewer = QPdfView(right_widget)  # Pass the parent widget
+        self.pdf_document = QPdfDocument(self)
         self.pdf_viewer.setDocument(self.pdf_document)
+        right_layout.addWidget(self.pdf_viewer)
         
         # Add widgets to splitter
         self.splitter.addWidget(left_widget)
-        self.splitter.addWidget(self.pdf_viewer)
+        self.splitter.addWidget(right_widget)
         self.splitter.setSizes([600, 600])
         
         main_layout.addWidget(self.splitter)
