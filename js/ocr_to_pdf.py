@@ -1,41 +1,67 @@
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import json
 
-def create_pdf_from_ocr(ocr_results, output_path, page_width=612, page_height=792):
+def create_pdf_from_ocr(ocr_results, output_path, image_height=None, page_size=letter):
     """
-    Create a PDF from OCR results.
+    Create a PDF from OCR results with improved positioning.
     
     Args:
         ocr_results: List of dictionaries with 'text', 'confidence', and 'bounding_box'
         output_path: Path to save the PDF
-        page_width: Width of the PDF page (default is letter width in points)
-        page_height: Height of the PDF page (default is letter height in points)
+        image_height: Height of the original image (needed for y-coordinate conversion)
+        page_size: Size of the PDF page (default is letter)
     """
-    c = canvas.Canvas(output_path, pagesize=(page_width, page_height))
+    page_width, page_height = page_size
     
-    for item in ocr_results:
+    # If image_height is not provided, estimate it from bounding boxes
+    if image_height is None:
+        max_y = 0
+        for item in ocr_results:
+            for point in item['bounding_box']:
+                max_y = max(max_y, point[1])
+        image_height = max_y + 50  # Add some margin
+    
+    # Create PDF canvas
+    c = canvas.Canvas(output_path, pagesize=page_size)
+    
+    # Optional: Register a font that supports a wide range of characters
+    # pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
+    
+    # Sort text blocks by y-coordinate (top to bottom)
+    sorted_results = sorted(ocr_results, key=lambda x: x['bounding_box'][0][1])
+    
+    for item in sorted_results:
         text = item['text']
-        # confidence = item['confidence']  # Uncomment if you want to use confidence
         bbox = item['bounding_box']
         
         # Calculate text position
-        # OCR usually gives coordinates in [x0, y0, x1, y1, x2, y2, x3, y3] format
-        # where points are clockwise from top-left
-        # For simplicity, we'll use the top-left point (x0, y0) as reference
+        # Use top-left corner as reference point
         x = bbox[0][0]
         
-        # PDF coordinates start from bottom, but image coordinates usually start from top
-        # So we need to flip the y-coordinate
-        y = page_height - bbox[0][1]
+        # Convert y-coordinate from image space to PDF space
+        # In image, y=0 is at top; in PDF, y=0 is at bottom
+        y = page_height - (bbox[0][1] * page_height / image_height)
         
-        # Set font size based on bounding box height
-        # This is an approximation
-        height = abs(bbox[0][1] - bbox[2][1])
-        font_size = height * 0.8  # Adjust this factor as needed
+        # Calculate width and height of the text box
+        width = max(bbox[1][0] - bbox[0][0], bbox[2][0] - bbox[3][0])
+        height = max(bbox[3][1] - bbox[0][1], bbox[2][1] - bbox[1][1])
         
+        # Calculate font size based on height
+        font_size = height * 0.75  # Adjust this factor as needed
+        font_size = max(6, min(font_size, 72))  # Limit font size to reasonable range
+        
+        # Set font
         c.setFont("Helvetica", font_size)
+        
+        # Draw text
         c.drawString(x, y, text)
+        
+        # Optional: Draw bounding box for debugging
+        # c.setStrokeColorRGB(0.8, 0.8, 0.8)  # Light gray
+        # c.rect(x, y - height, width, height, stroke=1, fill=0)
     
     c.save()
 
@@ -53,4 +79,8 @@ ocr_results = [
     }
 ]
 
-create_pdf_from_ocr(ocr_results, "ocr_output.pdf")
+# Use this if you know the image height
+create_pdf_from_ocr(ocr_results, "ocr_output.pdf", image_height=1000)
+
+# Or let the function estimate the image height
+# create_pdf_from_ocr(ocr_results, "ocr_output.pdf")
