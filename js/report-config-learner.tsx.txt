@@ -1,0 +1,570 @@
+import React, { useState, useCallback } from 'react';
+import { Upload, FileText, CheckCircle, AlertCircle, Settings } from 'lucide-react';
+import * as Papa from 'papaparse';
+import * as XLSX from 'xlsx';
+
+// Main App Component
+export default function ReportConfigLearner() {
+  const [step, setStep] = useState('upload'); // Possible states: upload, processing, configCreated, generateReport
+  const [reportFiles, setReportFiles] = useState([]);
+  const [configurations, setConfigurations] = useState([]);
+  const [selectedConfig, setSelectedConfig] = useState(null);
+  const [newDataFiles, setNewDataFiles] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [generatedReport, setGeneratedReport] = useState(null);
+
+  // Handle file uploads for learning
+  const handleReportFileUpload = useCallback((e) => {
+    const files = Array.from(e.target.files);
+    setReportFiles(files);
+    addNotification('Files uploaded successfully', 'success');
+  }, []);
+
+  // Handle file uploads for new report generation
+  const handleNewDataUpload = useCallback((e) => {
+    const files = Array.from(e.target.files);
+    setNewDataFiles(files);
+    addNotification('New data files uploaded successfully', 'success');
+  }, []);
+
+  // Add a notification message
+  const addNotification = useCallback((message, type = 'info') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, message, type }]);
+    
+    // Auto-remove notification after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(notification => notification.id !== id));
+    }, 5000);
+  }, []);
+
+  // Parse the report files and learn configurations
+  const learnConfigurations = useCallback(async () => {
+    if (reportFiles.length === 0) {
+      addNotification('Please upload report files first', 'error');
+      return;
+    }
+
+    setStep('processing');
+    
+    try {
+      // Process each file to extract structure and create configs
+      const configs = await Promise.all(reportFiles.map(async (file) => {
+        // Determine file type
+        const fileType = file.name.split('.').pop().toLowerCase();
+        let extractedData;
+        
+        if (fileType === 'csv') {
+          extractedData = await parseCSV(file);
+        } else if (['xlsx', 'xls'].includes(fileType)) {
+          extractedData = await parseExcel(file);
+        } else {
+          throw new Error(`Unsupported file type: ${fileType}`);
+        }
+        
+        // Generate configuration from the extracted data
+        const config = analyzeReportStructure(extractedData, file.name);
+        return config;
+      }));
+      
+      setConfigurations(configs);
+      setStep('configCreated');
+      addNotification('Report configurations created successfully!', 'success');
+    } catch (error) {
+      addNotification(`Error learning configurations: ${error.message}`, 'error');
+      setStep('upload');
+    }
+  }, [reportFiles]);
+
+  // Parse CSV files
+  const parseCSV = (file) => {
+    return new Promise((resolve, reject) => {
+      Papa.parse(file, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          resolve({
+            data: results.data,
+            fields: results.meta.fields,
+            filename: file.name,
+            fileType: 'csv'
+          });
+        },
+        error: (error) => {
+          reject(error);
+        }
+      });
+    });
+  };
+
+  // Parse Excel files
+  const parseExcel = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onload = (e) => {
+        try {
+          const data = e.target.result;
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+          
+          resolve({
+            data: jsonData,
+            fields: Object.keys(jsonData[0] || {}),
+            filename: file.name,
+            fileType: 'excel',
+            sheetName
+          });
+        } catch (error) {
+          reject(error);
+        }
+      };
+      
+      reader.onerror = (error) => reject(error);
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  // Analyze the structure of the report data and create a configuration
+  const analyzeReportStructure = (extractedData, filename) => {
+    const { data, fields, fileType } = extractedData;
+    
+    // Detect data types for each field
+    const fieldTypes = {};
+    fields.forEach(field => {
+      const values = data.map(row => row[field]).filter(v => v !== undefined && v !== null);
+      
+      if (values.length === 0) {
+        fieldTypes[field] = 'unknown';
+      } else if (values.every(v => typeof v === 'number')) {
+        fieldTypes[field] = 'numeric';
+      } else if (values.some(v => v instanceof Date) || 
+                values.some(v => typeof v === 'string' && !isNaN(Date.parse(v)))) {
+        fieldTypes[field] = 'date';
+      } else {
+        fieldTypes[field] = 'text';
+      }
+    });
+    
+    // Detect potential aggregations and groupings
+    const numericFields = fields.filter(field => fieldTypes[field] === 'numeric');
+    const potentialGroupByFields = fields.filter(field => 
+      fieldTypes[field] === 'text' || fieldTypes[field] === 'date'
+    );
+    
+    // Try to detect if any fields look like months or time periods
+    const timeFields = potentialGroupByFields.filter(field => {
+      const values = data.map(row => String(row[field]).toLowerCase());
+      const monthNames = ['january', 'february', 'march', 'april', 'may', 'june', 
+                          'july', 'august', 'september', 'october', 'november', 'december',
+                          'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      
+      return values.some(v => monthNames.some(month => v.includes(month)));
+    });
+    
+    // Generate a config name from the file name
+    const configName = filename.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Create configuration object
+    return {
+      id: Date.now(),
+      name: configName,
+      sourceFileName: filename,
+      fileType,
+      fields,
+      fieldTypes,
+      potentialMetrics: numericFields,
+      potentialGroupings: potentialGroupByFields,
+      timeFields,
+      createdAt: new Date().toISOString()
+    };
+  };
+
+  // Generate a new report based on selected config and new data
+  const generateNewReport = useCallback(async () => {
+    if (!selectedConfig || newDataFiles.length === 0) {
+      addNotification('Please select a configuration and upload new data files', 'error');
+      return;
+    }
+
+    try {
+      setStep('processing');
+      
+      // Parse new data file
+      const file = newDataFiles[0];
+      const fileType = file.name.split('.').pop().toLowerCase();
+      let extractedData;
+      
+      if (fileType === 'csv') {
+        extractedData = await parseCSV(file);
+      } else if (['xlsx', 'xls'].includes(fileType)) {
+        extractedData = await parseExcel(file);
+      } else {
+        throw new Error(`Unsupported file type: ${fileType}`);
+      }
+      
+      // Apply selected configuration to generate new report
+      const report = applyConfigToData(selectedConfig, extractedData);
+      
+      setGeneratedReport(report);
+      setStep('generateReport');
+      addNotification('New report generated successfully!', 'success');
+    } catch (error) {
+      addNotification(`Error generating report: ${error.message}`, 'error');
+    }
+  }, [selectedConfig, newDataFiles]);
+
+  // Apply configuration to new data
+  const applyConfigToData = (config, extractedData) => {
+    const { data, fields } = extractedData;
+    
+    // Check if fields match configuration expectations
+    const missingFields = config.fields.filter(field => !fields.includes(field));
+    if (missingFields.length > 0) {
+      throw new Error(`New data is missing expected fields: ${missingFields.join(', ')}`);
+    }
+    
+    // Simple implementation: just filter the data to include only the fields in the config
+    const processedData = data.map(row => {
+      const newRow = {};
+      config.fields.forEach(field => {
+        newRow[field] = row[field];
+      });
+      return newRow;
+    });
+    
+    // For numeric fields, calculate some basic aggregations
+    const aggregations = {};
+    config.potentialMetrics.forEach(field => {
+      const values = processedData.map(row => row[field]).filter(v => v !== undefined && v !== null);
+      if (values.length > 0) {
+        const sum = values.reduce((acc, val) => acc + val, 0);
+        const avg = sum / values.length;
+        aggregations[field] = {
+          sum,
+          avg,
+          min: Math.min(...values),
+          max: Math.max(...values)
+        };
+      }
+    });
+    
+    return {
+      configName: config.name,
+      generatedAt: new Date().toISOString(),
+      data: processedData,
+      aggregations,
+      summary: `Report generated using configuration "${config.name}" with ${processedData.length} records.`
+    };
+  };
+
+  // Export configuration as JSON
+  const exportConfig = useCallback((config) => {
+    const configJson = JSON.stringify(config, null, 2);
+    const blob = new Blob([configJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${config.name}_config.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    addNotification(`Configuration "${config.name}" exported successfully`, 'success');
+  }, []);
+
+  // Export generated report
+  const exportReport = useCallback(() => {
+    if (!generatedReport) return;
+    
+    const reportJson = JSON.stringify(generatedReport, null, 2);
+    const blob = new Blob([reportJson], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${generatedReport.configName}_report_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    addNotification('Report exported successfully', 'success');
+  }, [generatedReport]);
+
+  // Reset the app state
+  const resetApp = useCallback(() => {
+    setStep('upload');
+    setReportFiles([]);
+    setConfigurations([]);
+    setSelectedConfig(null);
+    setNewDataFiles([]);
+    setGeneratedReport(null);
+    addNotification('Application reset successfully', 'info');
+  }, []);
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-blue-600 text-white p-6 shadow-md">
+        <div className="container mx-auto">
+          <h1 className="text-2xl font-bold">Report Configuration Learning App</h1>
+          <p className="mt-2 text-blue-100">Upload report templates and automatically generate configurations for future reports</p>
+        </div>
+      </header>
+
+      {/* Notification Area */}
+      <div className="fixed top-4 right-4 z-50">
+        {notifications.map(notification => (
+          <div 
+            key={notification.id}
+            className={`mb-2 p-3 rounded shadow-md flex items-center ${
+              notification.type === 'success' ? 'bg-green-100 text-green-800 border-l-4 border-green-500' :
+              notification.type === 'error' ? 'bg-red-100 text-red-800 border-l-4 border-red-500' :
+              'bg-blue-100 text-blue-800 border-l-4 border-blue-500'
+            }`}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="mr-2 h-5 w-5" />
+            ) : notification.type === 'error' ? (
+              <AlertCircle className="mr-2 h-5 w-5" />
+            ) : (
+              <FileText className="mr-2 h-5 w-5" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Main Content */}
+      <main className="flex-grow container mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          {/* Progress Steps */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              <div className={`flex-1 text-center ${step === 'upload' ? 'text-blue-600 font-bold' : ''}`}>
+                <div className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center ${step === 'upload' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>1</div>
+                <div className="mt-1">Upload Files</div>
+              </div>
+              <div className="flex-1 text-center">
+                <div className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center ${step === 'processing' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>2</div>
+                <div className="mt-1">Processing</div>
+              </div>
+              <div className="flex-1 text-center">
+                <div className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center ${step === 'configCreated' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>3</div>
+                <div className="mt-1">Config Created</div>
+              </div>
+              <div className="flex-1 text-center">
+                <div className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center ${step === 'generateReport' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>4</div>
+                <div className="mt-1">Generate Report</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload Step */}
+          {step === 'upload' && (
+            <div className="space-y-6">
+              <div className="bg-gray-50 p-6 rounded-lg border-2 border-dashed border-gray-300">
+                <div className="text-center">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                  <h3 className="mt-2 text-lg font-medium text-gray-900">Upload Report Templates</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Upload sample reports in CSV or Excel format for the system to learn
+                  </p>
+                  <div className="mt-4">
+                    <label className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 cursor-pointer">
+                      <input
+                        type="file"
+                        multiple
+                        onChange={handleReportFileUpload}
+                        accept=".csv,.xlsx,.xls"
+                        className="sr-only"
+                      />
+                      Select Files
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {reportFiles.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Selected Files:</h3>
+                  <ul className="divide-y divide-gray-200 border rounded-md">
+                    {reportFiles.map((file, index) => (
+                      <li key={index} className="flex items-center justify-between p-3">
+                        <div className="flex items-center">
+                          <FileText className="h-5 w-5 text-gray-400 mr-3" />
+                          <span>{file.name}</span>
+                        </div>
+                        <span className="text-sm text-gray-500">{(file.size / 1024).toFixed(2)} KB</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={learnConfigurations}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Learn Configurations
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Processing Step */}
+          {step === 'processing' && (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-600 mx-auto"></div>
+              <h3 className="mt-4 text-lg font-medium">Processing Files...</h3>
+              <p className="mt-2 text-gray-500">This might take a moment depending on the file size and complexity.</p>
+            </div>
+          )}
+
+          {/* Config Created Step */}
+          
+                      </div>
+                    </div>
+                  </div>
+
+                  {newDataFiles.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between p-3 border rounded-md">
+                        <div className="flex items-center">
+                          <FileText className="h-5 w-5 text-gray-400 mr-3" />
+                          <span>{newDataFiles[0].name}</span>
+                        </div>
+                        <span className="text-sm text-gray-500">{(newDataFiles[0].size / 1024).toFixed(2)} KB</span>
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          onClick={generateNewReport}
+                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                        >
+                          Generate Report
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-between pt-4 border-t mt-8">
+                <button
+                  onClick={resetApp}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                >
+                  Start Over
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Generate Report Step */}
+          {step === 'generateReport' && generatedReport && (
+            <div className="space-y-6">
+              <div className="bg-green-50 border-l-4 border-green-400 p-4 rounded">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <CheckCircle className="h-5 w-5 text-green-400" />
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-green-700">
+                      Report successfully generated using "{generatedReport.configName}" configuration!
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h3 className="text-lg font-medium">Report Summary</h3>
+                <p className="mt-2 text-gray-600">{generatedReport.summary}</p>
+                <p className="text-sm text-gray-500 mt-1">Generated at: {new Date(generatedReport.generatedAt).toLocaleString()}</p>
+                
+                <div className="mt-4">
+                  <h4 className="font-medium">Aggregations:</h4>
+                  <div className="mt-2 grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {Object.entries(generatedReport.aggregations).map(([field, stats]) => (
+                      <div key={field} className="bg-white p-3 rounded border">
+                        <h5 className="font-medium">{field}</h5>
+                        <div className="mt-1 space-y-1 text-sm">
+                          <p><span className="text-gray-500">Sum:</span> {stats.sum.toFixed(2)}</p>
+                          <p><span className="text-gray-500">Average:</span> {stats.avg.toFixed(2)}</p>
+                          <p><span className="text-gray-500">Min:</span> {stats.min.toFixed(2)}</p>
+                          <p><span className="text-gray-500">Max:</span> {stats.max.toFixed(2)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="font-medium">Sample Data (first 5 rows):</h4>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          {Object.keys(generatedReport.data[0] || {}).map((header) => (
+                            <th key={header} className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              {header}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {generatedReport.data.slice(0, 5).map((row, rowIndex) => (
+                          <tr key={rowIndex}>
+                            {Object.values(row).map((value, cellIndex) => (
+                              <td key={cellIndex} className="px-3 py-2 text-sm text-gray-500">
+                                {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={exportReport}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Export Report
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-between pt-4 border-t mt-8">
+                <button
+                  onClick={resetApp}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                >
+                  Start Over
+                </button>
+                <button
+                  onClick={() => setStep('configCreated')}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Generate Another Report
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-gray-100 border-t p-4">
+        <div className="container mx-auto text-center text-gray-500 text-sm">
+          Report Configuration Learning App - Automatically learn from report templates and generate new reports
+        </div>
+      </footer>
+    </div>
+  );
+}
