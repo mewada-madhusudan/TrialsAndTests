@@ -1,4 +1,99 @@
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+def on_file_double_clicked(self, item):
+        """Handle double-click on a file item"""
+        if isinstance(item, FileListItem) and item.file_path:
+            try:
+                # Try to open the file with the default application
+                import subprocess
+                import platform
+                
+                system = platform.system()
+                if system == 'Windows':
+                    os.startfile(item.file_path)
+                elif system == 'Darwin':  # macOS
+                    subprocess.call(('open', item.file_path))
+                else:  # Linux and other Unix-like
+                    subprocess.call(('xdg-open', item.file_path))
+                    
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Could not open file: {str(e)}")
+    
+    def on_add_file_clicked(self):
+        """Handle add file button click"""
+        if not self.current_folder or not os.path.isdir(self.current_folder):
+            QMessageBox.information(self, "No Folder Selected", "Please select a folder first.")
+            return
+            
+        # Open file selection dialog
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "Select Files to Add", "", "All Files (*.*)"
+        )
+        
+        if not files:
+            return
+            
+        # Copy files to current folder
+        import shutil
+        copied_count = 0
+        
+        for file_path in files:
+            try:
+                filename = os.path.basename(file_path)
+                dest_path = os.path.join(self.current_folder, filename)
+                
+                # Check if file already exists
+                if os.path.exists(dest_path):
+                    result = QMessageBox.question(
+                        self, "File Exists",
+                        f"File {filename} already exists. Overwrite?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    
+                    if result == QMessageBox.StandardButton.No:
+                        continue
+                
+                # Copy the file
+                shutil.copy2(file_path, dest_path)
+                copied_count += 1
+                
+            except Exception as e:
+                QMessageBox.warning(self, "Error", f"Error copying file {filename}: {str(e)}")
+        
+        # Refresh file list
+        if copied_count > 0:
+            self.load_folder_files(self.current_folder)
+            QMessageBox.information(self, "Files Added", f"Successfully added {copied_count} file(s).")
+    
+    def on_add_folder_clicked(self):
+        """Handle add subfolder button click"""
+        if not self.current_folder or not os.path.isdir(self.current_folder):
+            QMessageBox.information(self, "No Folder Selected", "Please select a parent folder first.")
+            return
+            
+        # Ask for folder name
+        folder_name, ok = QInputDialog.getText(self, "Add Folder", "Folder Name:")
+        
+        if not ok or not folder_name:
+            return
+            
+        # Create subfolder
+        try:
+            new_folder_path = os.path.join(self.current_folder, folder_name)
+            
+            # Check if folder already exists
+            if os.path.exists(new_folder_path):
+                QMessageBox.warning(self, "Folder Exists", f"Folder {folder_name} already exists.")
+                return
+                
+            # Create the folder
+            os.makedirs(new_folder_path)
+            
+            # Refresh folder tree
+            self.load_folder_structure()
+            
+            QMessageBox.information(self, "Folder Created", f"Successfully created folder {folder_name}.")
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error creating folder: {str(e)}")from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                              QListWidget, QListWidgetItem, QProgressBar, QCheckBox,
                              QMessageBox, QWidget, QGroupBox, QScrollArea, QFormLayout,
                              QTreeWidget, QTreeWidgetItem, QSplitter, QMenu)
@@ -98,12 +193,18 @@ class DocumentListItem(QWidget):
 
 class FileListItem(QListWidgetItem):
     """Custom list widget item for files"""
-    def __init__(self, filename, parent=None):
+    def __init__(self, filename, file_path=None, parent=None):
         super().__init__(parent)
         self.filename = filename
+        self.file_path = file_path
         self.setText(filename)
-        # Set icon based on file type if needed
-        # self.setIcon(QIcon("path/to/file_icon.png"))
+        
+        # Set icon based on file extension if needed
+        file_ext = os.path.splitext(filename)[1].lower()
+        if file_ext in ['.pdf', '.doc', '.docx', '.txt', '.xls', '.xlsx', '.ppt', '.pptx']:
+            # Here you would set specific icons based on file type
+            # For now we'll just use the filetype as part of the display
+            self.setText(f"{filename} [{file_ext[1:]}]")
 
 
 class FolderTreeItem(QTreeWidgetItem):
@@ -146,14 +247,13 @@ class FolderTreeItem(QTreeWidgetItem):
 
 class PDFManagementDialog(QDialog):
     """
-    Dialog for managing PDF documents in knowledge bases
+    Dialog for managing file system structure
     """
-    def __init__(self, llm_processor, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.llm_processor = llm_processor
         self.thread_pool = QThreadPool()
-        self.document_widgets = {}  # Store widgets by doc_id for updates
         self.current_folder = None  # Current selected folder
+        self.root_folder_path = None  # Root folder path
         
         self.setWindowTitle("File Management")
         self.setMinimumSize(900, 600)
@@ -165,6 +265,14 @@ class PDFManagementDialog(QDialog):
         """Setup the dialog UI components"""
         # Main layout
         main_layout = QVBoxLayout(self)
+        
+        # Button to select root folder
+        select_folder_layout = QHBoxLayout()
+        self.select_folder_btn = QPushButton("Select Root Folder")
+        self.select_folder_btn.clicked.connect(self.select_root_folder)
+        select_folder_layout.addWidget(self.select_folder_btn)
+        select_folder_layout.addStretch()
+        main_layout.addLayout(select_folder_layout)
         
         # Create splitter for folder tree and file list
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -178,7 +286,7 @@ class PDFManagementDialog(QDialog):
         self.folder_tree.itemClicked.connect(self.on_folder_selected)
         folder_layout.addWidget(self.folder_tree)
         
-        # Create sample root folders for demonstration
+        # Create sample root folders for demonstration initially
         self.create_sample_folders()
         
         splitter.addWidget(folder_group)
@@ -190,6 +298,7 @@ class PDFManagementDialog(QDialog):
         self.file_list = QListWidget()
         self.file_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.file_list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
+        self.file_list.itemDoubleClicked.connect(self.on_file_double_clicked)
         file_layout.addWidget(self.file_list)
         
         splitter.addWidget(file_group)
@@ -198,16 +307,47 @@ class PDFManagementDialog(QDialog):
         splitter.setSizes([300, 600])
         main_layout.addWidget(splitter)
         
-        # Close button
+        # Buttons layout
         buttons_layout = QHBoxLayout()
+        
+        # Add file button
+        self.add_file_btn = QPushButton("Add File")
+        self.add_file_btn.clicked.connect(self.on_add_file_clicked)
+        buttons_layout.addWidget(self.add_file_btn)
+        
+        # Add folder button
+        self.add_folder_btn = QPushButton("Add Folder")
+        self.add_folder_btn.clicked.connect(self.on_add_folder_clicked)
+        buttons_layout.addWidget(self.add_folder_btn)
+        
+        # Refresh button
+        self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self.load_folder_structure)
+        buttons_layout.addWidget(self.refresh_btn)
+        
         buttons_layout.addStretch()
+        
+        # Close button
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.accept)
         buttons_layout.addWidget(self.close_btn)
+        
         main_layout.addLayout(buttons_layout)
     
+    def select_root_folder(self):
+        """Allow user to select a root folder to browse"""
+        root_folder = QFileDialog.getExistingDirectory(
+            self, "Select Root Folder", ""
+        )
+        
+        if not root_folder or not os.path.isdir(root_folder):
+            return
+            
+        self.root_folder_path = root_folder
+        self.load_folder_structure()
+    
     def create_sample_folders(self):
-        """Create sample folder structure for demonstration"""
+        """Create sample folder structure if no folder is selected"""
         # Clear previous tree
         self.folder_tree.clear()
         
@@ -222,10 +362,52 @@ class PDFManagementDialog(QDialog):
         self.folder_tree.addTopLevelItem(folder3)
     
     def load_folder_structure(self):
-        """Load folder structure - in a real app, this would load actual folders"""
-        # This is a placeholder - in a real application, you would load actual folders
-        # For now, we're using the sample folders created in create_sample_folders
-        pass
+        """Load actual folder structure from filesystem"""
+        # Clear previous tree
+        self.folder_tree.clear()
+        
+        if not hasattr(self, 'root_folder_path') or not self.root_folder_path:
+            # If no root folder selected, use sample folders
+            self.create_sample_folders()
+            return
+            
+        # Get top-level folders in the root folder
+        try:
+            folders = [f for f in os.listdir(self.root_folder_path) 
+                      if os.path.isdir(os.path.join(self.root_folder_path, f))]
+            
+            # Create tree items for each folder
+            for folder_name in sorted(folders):
+                folder_path = os.path.join(self.root_folder_path, folder_name)
+                folder_item = FolderTreeItem(folder_path, is_root=True)
+                self.folder_tree.addTopLevelItem(folder_item)
+                
+                # Recursively add subfolders
+                self.add_subfolders(folder_item, folder_path)
+                
+            # Add files directly in the root folder
+            self.root_item = FolderTreeItem(self.root_folder_path, is_root=True)
+            self.root_item.setText(0, "ROOT")
+            self.folder_tree.addTopLevelItem(self.root_item)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error loading folder structure: {str(e)}")
+    
+    def add_subfolders(self, parent_item, parent_path):
+        """Recursively add subfolders to the tree"""
+        try:
+            subfolders = [f for f in os.listdir(parent_path) 
+                         if os.path.isdir(os.path.join(parent_path, f))]
+            
+            for subfolder in sorted(subfolders):
+                subfolder_path = os.path.join(parent_path, subfolder)
+                subfolder_item = FolderTreeItem(subfolder_path, parent=parent_item)
+                
+                # Recursively add sub-subfolders
+                self.add_subfolders(subfolder_item, subfolder_path)
+        except Exception as e:
+            # Just skip problematic folders
+            pass
     
     def on_folder_selected(self, item, column):
         """Handle folder selection in tree"""
@@ -234,21 +416,30 @@ class PDFManagementDialog(QDialog):
             self.load_folder_files(item.path)
     
     def load_folder_files(self, folder_path):
-        """Load files for selected folder"""
+        """Load actual files from the selected folder"""
         # Clear previous file list
         self.file_list.clear()
         
-        # In a real application, you would load actual files from the folder
-        # For demonstration, we'll add some sample files based on the folder
-        
-        if folder_path == "Folder 1":
-            # Add sample files for Folder 1
-            self.file_list.addItem(FileListItem("FILE 1"))
-            self.file_list.addItem(FileListItem("File 2"))
-        elif folder_path:
-            # For other folders, just add placeholder files
-            self.file_list.addItem(FileListItem("Sample File 1.pdf"))
-            self.file_list.addItem(FileListItem("Sample File 2.pdf"))
+        if not folder_path or not os.path.isdir(folder_path):
+            return
+            
+        try:
+            # Get all files in the folder (not directories)
+            files = [f for f in os.listdir(folder_path) 
+                   if os.path.isfile(os.path.join(folder_path, f))]
+            
+            # Add files to the list
+            for filename in sorted(files):
+                file_path = os.path.join(folder_path, filename)
+                file_item = FileListItem(filename, file_path)
+                self.file_list.addItem(file_item)
+            
+            # Update window title to show current folder
+            folder_name = os.path.basename(folder_path)
+            self.setWindowTitle(f"File Management - {folder_name}")
+                
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error loading files: {str(e)}")
 
 
 class QComboBox(QComboBox):
