@@ -98,20 +98,27 @@ class DocumentListItem(QWidget):
 
 class FolderTreeItem(QTreeWidgetItem):
     """Custom tree widget item for folders"""
-    def __init__(self, path, parent=None):
+    def __init__(self, path, is_root=False, parent=None):
         super().__init__(parent)
         self.path = path
         self.folder_name = os.path.basename(path)
         self.setText(0, self.folder_name)
         self.doc_count = 0
         self.pending_count = 0
+        self.is_root = is_root
         self.setCheckState(0, Qt.CheckState.Unchecked)
         
     def update_counts(self, doc_count, pending_count):
         """Update document counts and display"""
         self.doc_count = doc_count
         self.pending_count = pending_count
-        if pending_count > 0:
+        
+        # Root folder shows subfolders count instead of documents
+        if self.is_root:
+            child_count = self.childCount()
+            self.setText(0, f"{self.folder_name} ({child_count} subfolders)")
+            self.setForeground(0, QColor("#000000"))  # Default color
+        elif pending_count > 0:
             self.setText(0, f"{self.folder_name} ({pending_count}/{doc_count} need OCR)")
             self.setForeground(0, QColor("#FF9800"))  # Orange for pending
         else:
@@ -296,13 +303,38 @@ class PDFManagementDialog(QDialog):
             QMessageBox.information(self, "No PDFs Found", "No PDF files were found in the selected folder structure.")
             return
         
-        # Process all files
+        # Generate unique code for this import batch
+        import datetime
+        import uuid
+        date_str = datetime.datetime.now().strftime("%Y%m%d")
+        batch_id = f"{date_str}_{str(uuid.uuid4())[:8]}"
+        
+        # Process all files, maintaining folder structure
         processed = 0
         for folder_path, pdfs in all_folders:
+            # Create relative path from root folder to maintain structure
+            rel_path = os.path.relpath(folder_path, root_folder)
+            if rel_path == '.':  # Files in root folder
+                folder_code = f"batch_{batch_id}_root"
+            else:
+                # Create a folder code with the relative path
+                folder_code = f"batch_{batch_id}_{rel_path.replace(os.sep, '_')}"
+            
             for pdf in pdfs:
                 file_path = os.path.join(folder_path, pdf)
-                # Add document to KB
-                self.llm_processor.add_document_to_kb(kb_name, file_path, is_scanned)
+                
+                # Add document to KB with folder code metadata
+                doc_id = self.llm_processor.add_document_to_kb(kb_name, file_path, is_scanned)
+                
+                # Add folder code metadata if document was added successfully
+                if doc_id:
+                    # Assuming there's an update_document_metadata method or similar
+                    self.llm_processor.update_document_metadata(doc_id, {
+                        "folder_code": folder_code,
+                        "original_folder": folder_path,
+                        "relative_path": rel_path,
+                        "batch_id": batch_id
+                    })
                 
                 # Update progress
                 processed += 1
@@ -322,7 +354,7 @@ class PDFManagementDialog(QDialog):
         # Show completion message
         QMessageBox.information(
             self, "Import Complete", 
-            f"Successfully processed {processed} PDF files from {len(all_folders)} folders."
+            f"Successfully processed {processed} PDF files from {len(all_folders)} folders.\nBatch ID: {batch_id}"
         )
     
     def refresh_folder_tree(self):
@@ -337,26 +369,86 @@ class PDFManagementDialog(QDialog):
         # Get documents for current KB
         documents = self.llm_processor.get_kb_documents(kb_name)
         
-        # Group documents by folder
-        folders = {}
+        # Organize by root folders and their subfolders
+        root_folders = {}
+        
         for doc in documents:
             folder_path = os.path.dirname(doc["original_path"])
-            if folder_path not in folders:
-                folders[folder_path] = {"docs": [], "pending": 0}
+            # Find the root folder (assuming structure of root/subfolder/...)
+            path_parts = folder_path.split(os.sep)
             
-            folders[folder_path]["docs"].append(doc)
-            if doc["is_scanned"] and doc["conversion_status"] in ["pending", "failed"]:
-                folders[folder_path]["pending"] += 1
+            # Skip if path is too short
+            if len(path_parts) < 2:
+                continue
+                
+            # Determine root folder
+            # Start with the complete path
+            for i in range(len(path_parts)-1, 0, -1):
+                possible_root = os.sep.join(path_parts[:i])
+                # If this is a known root folder or we're at the base, use it
+                if possible_root in root_folders:
+                    root_folder_path = possible_root
+                    break
+            else:
+                # Default to first level if no match found
+                root_folder_path = path_parts[0]
+                if os.sep in folder_path:
+                    root_folder_path = folder_path.split(os.sep)[0]
+            
+            # Initialize root folder if needed
+            if root_folder_path not in root_folders:
+                root_folders[root_folder_path] = {
+                    "subfolders": {},
+                    "docs": [],
+                    "pending": 0
+                }
+            
+            # Add to the appropriate subfolder or directly to root
+            if folder_path != root_folder_path:
+                if folder_path not in root_folders[root_folder_path]["subfolders"]:
+                    root_folders[root_folder_path]["subfolders"][folder_path] = {
+                        "docs": [],
+                        "pending": 0
+                    }
+                
+                root_folders[root_folder_path]["subfolders"][folder_path]["docs"].append(doc)
+                if doc["is_scanned"] and doc["conversion_status"] in ["pending", "failed"]:
+                    root_folders[root_folder_path]["subfolders"][folder_path]["pending"] += 1
+            else:
+                # Document is directly in root folder
+                root_folders[root_folder_path]["docs"].append(doc)
+                if doc["is_scanned"] and doc["conversion_status"] in ["pending", "failed"]:
+                    root_folders[root_folder_path]["pending"] += 1
         
-        # Create folder tree structure
-        for folder_path, folder_data in folders.items():
-            # Create tree item
-            folder_item = FolderTreeItem(folder_path)
-            folder_item.update_counts(
-                len(folder_data["docs"]), 
-                folder_data["pending"]
+        # Create tree structure
+        for root_path, root_data in root_folders.items():
+            # Create root item
+            root_item = FolderTreeItem(root_path, is_root=True)
+            self.folder_tree.addTopLevelItem(root_item)
+            
+            # Add docs in root folder (if any)
+            if root_data["docs"]:
+                root_item.update_counts(
+                    len(root_data["docs"]), 
+                    root_data["pending"]
+                )
+            
+            # Add subfolders
+            for subfolder_path, subfolder_data in root_data["subfolders"].items():
+                subfolder_item = FolderTreeItem(subfolder_path, parent=root_item)
+                subfolder_item.update_counts(
+                    len(subfolder_data["docs"]), 
+                    subfolder_data["pending"]
+                )
+            
+            # Update root folder counts
+            root_item.update_counts(
+                len(root_data["docs"]), 
+                root_data["pending"]
             )
-            self.folder_tree.addTopLevelItem(folder_item)
+            
+            # Expand the root item
+            root_item.setExpanded(True)
         
         # Sort folders by name
         self.folder_tree.sortItems(0, Qt.SortOrder.AscendingOrder)
@@ -438,10 +530,22 @@ class PDFManagementDialog(QDialog):
         if not kb:
             return
         
-        # Set up output directory
-        output_dir = os.path.join(kb["directory"], "converted")
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # Get document metadata to determine output folder structure
+        metadata = self.llm_processor.get_document_metadata(doc_id)
+        folder_code = metadata.get("folder_code", "default")
+        
+        # Set up output directory with folder structure
+        base_output_dir = os.path.join(kb["directory"], "converted")
+        if not os.path.exists(base_output_dir):
+            os.makedirs(base_output_dir)
+        
+        # Create subfolder for this batch if folder_code exists
+        if folder_code != "default":
+            output_dir = os.path.join(base_output_dir, folder_code)
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+        else:
+            output_dir = base_output_dir
         
         # Update status to in_progress
         self.llm_processor.update_document_conversion(doc_id, "in_progress", progress=0)
@@ -500,13 +604,22 @@ class PDFManagementDialog(QDialog):
     
     def on_batch_convert_clicked(self):
         """Start batch conversion for all checked folders"""
-        # Get checked folders
+        # Get checked folders (including both root and subfolders)
         checked_folders = []
         
+        # Process root folders first
         for i in range(self.folder_tree.topLevelItemCount()):
-            item = self.folder_tree.topLevelItem(i)
-            if item.checkState(0) == Qt.CheckState.Checked:
-                checked_folders.append(item.path)
+            root_item = self.folder_tree.topLevelItem(i)
+            
+            # Add root folder if checked
+            if root_item.checkState(0) == Qt.CheckState.Checked:
+                checked_folders.append(root_item.path)
+            
+            # Check subfolders
+            for j in range(root_item.childCount()):
+                child_item = root_item.child(j)
+                if child_item.checkState(0) == Qt.CheckState.Checked:
+                    checked_folders.append(child_item.path)
         
         if not checked_folders:
             QMessageBox.information(
@@ -535,7 +648,21 @@ class PDFManagementDialog(QDialog):
                 self, "No Documents", "No documents requiring conversion in selected folders."
             )
             return
+        
+        # Group documents by batch_id/folder_code to maintain structure
+        grouped_docs = {}
+        for doc in docs_to_convert:
+            # Get metadata to find batch_id and folder_code
+            metadata = self.llm_processor.get_document_metadata(doc["id"])
+            batch_id = metadata.get("batch_id", "unknown")
+            folder_code = metadata.get("folder_code", "default")
             
+            key = f"{batch_id}_{folder_code}"
+            if key not in grouped_docs:
+                grouped_docs[key] = []
+            
+            grouped_docs[key].append(doc)
+        
         # Confirm conversion
         result = QMessageBox.question(
             self, "Batch Convert",
@@ -549,14 +676,21 @@ class PDFManagementDialog(QDialog):
             progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
             progress_dialog.show()
             
-            # Start conversion for each document
-            for i, doc in enumerate(docs_to_convert):
-                self.start_conversion(doc["id"])
-                progress_dialog.setValue(i + 1)
-                
-                # Process events to keep UI responsive
-                from PyQt6.QtCore import QCoreApplication
-                QCoreApplication.processEvents()
+            # Process each group to maintain folder structure in output
+            processed = 0
+            for folder_group, docs in grouped_docs.items():
+                # Create output subfolder based on the folder_code
+                for doc in docs:
+                    self.start_conversion(doc["id"])
+                    processed += 1
+                    progress_dialog.setValue(processed)
+                    
+                    # Process events to keep UI responsive
+                    from PyQt6.QtCore import QCoreApplication
+                    QCoreApplication.processEvents()
+                    
+                    if progress_dialog.wasCanceled():
+                        break
                 
                 if progress_dialog.wasCanceled():
                     break
