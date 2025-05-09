@@ -1,6 +1,8 @@
 import os
 import sys
 from PyQt6.QtCore import QObject, QRunnable, pyqtSignal, pyqtSlot
+import concurrent.futures
+from tqdm import tqdm
 
 # Import PDFProcessor from the convert_to_pdf module
 sys.path.append("Fixes")  # Adjust path as needed
@@ -40,48 +42,68 @@ class PDFConversionWorker(QRunnable):
             if not os.path.exists(self.output_dir):
                 os.makedirs(self.output_dir)
             
-            # Initialize the PDF processor
-            processor = PDFProcessor(output_dir=self.output_dir)
+            # Create a custom PDFProcessor subclass that tracks progress
+            class TrackedPDFProcessor(PDFProcessor):
+                def __init__(self, output_dir, worker):
+                    super().__init__(output_dir=output_dir)
+                    self.worker = worker
+                    self.total_pages = 0
+                    self.processed_pages = 0
+                
+                def convert_pdf_to_images(self, pdf_path, dpi=300):
+                    # First, call the original method to get images
+                    images = super().convert_pdf_to_images(pdf_path, dpi)
+                    self.total_pages = len(images)
+                    # Emit signal with total pages information
+                    self.worker.signals.page_processed.emit(
+                        self.worker.doc_id, 0, self.total_pages
+                    )
+                    return images
+                
+                def process_page(self, args):
+                    # Call the original method
+                    result = super().process_page(args)
+                    
+                    # Increment processed pages counter and update progress
+                    self.processed_pages += 1
+                    progress = (self.processed_pages / self.total_pages) * 95 if self.total_pages > 0 else 0
+                    
+                    # Emit signals with progress information
+                    self.worker.signals.progress.emit(self.worker.doc_id, progress)
+                    self.worker.signals.page_processed.emit(
+                        self.worker.doc_id, self.processed_pages, self.total_pages
+                    )
+                    
+                    return result
+                
+                def create_editable_pdf(self, texts, output_path):
+                    # Signal that we're creating the final PDF
+                    self.worker.signals.progress.emit(self.worker.doc_id, 95)
+                    
+                    # Call the original method
+                    result = super().create_editable_pdf(texts, output_path)
+                    
+                    # Signal progress at 99% (almost done)
+                    self.worker.signals.progress.emit(self.worker.doc_id, 99)
+                    
+                    return result
             
-            # Get page count first to have total for progress tracking
-            try:
-                images = processor.convert_pdf_to_images(self.file_path)
-                total_pages = len(images)
-            except Exception as e:
-                self.signals.error.emit(self.doc_id, f"Error getting page count: {str(e)}")
-                return
+            # Initialize our tracked PDF processor
+            processor = TrackedPDFProcessor(output_dir=self.output_dir, worker=self)
             
-            # Create a custom progress callback function
-            def progress_callback(current_page, total_pages):
-                progress = (current_page / total_pages) * 100
-                self.signals.progress.emit(self.doc_id, progress)
-                self.signals.page_processed.emit(self.doc_id, current_page, total_pages)
-            
-            # Create a wrapper for the process_page method that calls our progress callback
-            original_process_page = processor.process_page
-            
-            def process_page_with_progress(self_processor, args):
-                page_num, image, use_llm = args
-                # Call progress callback
-                progress_callback(page_num + 1, total_pages)
-                # Call original method
-                return original_process_page(args)
-            
-            # Replace the process_page method
-            processor.process_page = process_page_with_progress.__get__(processor, type(processor))
-            
-            # Process the PDF - this will save the output file
+            # Process the PDF - this will call all the necessary methods internally
+            # and our overridden methods will track and emit progress
             output_path = processor.process_pdf(self.file_path, use_llm=self.use_llm)
             
             # Verify the output file exists
             if not os.path.exists(output_path):
                 raise FileNotFoundError(f"Output file was not created: {output_path}")
             
-            # Restore original method
-            processor.process_page = original_process_page
+            # Signal 100% completion
+            self.signals.progress.emit(self.doc_id, 100)
             
-            # Signal completion
-            self.signals.completed.emit(self.doc_id, output_path, total_pages)
+            # Signal completion with output path and total pages
+            self.signals.completed.emit(self.doc_id, output_path, processor.total_pages)
             
         except Exception as e:
             self.signals.error.emit(self.doc_id, f"Conversion error: {str(e)}")
@@ -128,33 +150,72 @@ class BatchConversionWorker(QRunnable):
                 # Signal that conversion started
                 self.signals.started.emit(doc_id)
                 
-                # Initialize the PDF processor
-                processor = PDFProcessor(output_dir=output_dir)
+                # Create a custom PDFProcessor subclass that tracks progress
+                class TrackedPDFProcessor(PDFProcessor):
+                    def __init__(self, output_dir, worker, doc_id, db_manager):
+                        super().__init__(output_dir=output_dir)
+                        self.worker = worker
+                        self.doc_id = doc_id
+                        self.db_manager = db_manager
+                        self.total_pages = 0
+                        self.processed_pages = 0
+                    
+                    def convert_pdf_to_images(self, pdf_path, dpi=300):
+                        # First, call the original method to get images
+                        images = super().convert_pdf_to_images(pdf_path, dpi)
+                        self.total_pages = len(images)
+                        # Emit signal with total pages information
+                        self.worker.signals.page_processed.emit(
+                            self.doc_id, 0, self.total_pages
+                        )
+                        return images
+                    
+                    def process_page(self, args):
+                        # Call the original method
+                        result = super().process_page(args)
+                        
+                        # Increment processed pages counter and update progress
+                        self.processed_pages += 1
+                        progress = (self.processed_pages / self.total_pages) * 95 if self.total_pages > 0 else 0
+                        
+                        # Emit signals with progress information
+                        self.worker.signals.progress.emit(self.doc_id, progress)
+                        self.worker.signals.page_processed.emit(
+                            self.doc_id, self.processed_pages, self.total_pages
+                        )
+                        
+                        # Update progress in database
+                        self.db_manager.update_document_conversion(
+                            self.doc_id, "in_progress", progress=progress
+                        )
+                        
+                        return result
+                    
+                    def create_editable_pdf(self, texts, output_path):
+                        # Signal that we're creating the final PDF
+                        self.worker.signals.progress.emit(self.doc_id, 95)
+                        self.db_manager.update_document_conversion(
+                            self.doc_id, "in_progress", progress=95
+                        )
+                        
+                        # Call the original method
+                        result = super().create_editable_pdf(texts, output_path)
+                        
+                        # Signal progress at 99% (almost done)
+                        self.worker.signals.progress.emit(self.doc_id, 99)
+                        self.db_manager.update_document_conversion(
+                            self.doc_id, "in_progress", progress=99
+                        )
+                        
+                        return result
                 
-                # Get page count first
-                images = processor.convert_pdf_to_images(file_path)
-                total_pages = len(images)
-                
-                # Define progress callback
-                def progress_callback(current_page, total_pages):
-                    progress = (current_page / total_pages) * 100
-                    self.signals.progress.emit(doc_id, progress)
-                    self.signals.page_processed.emit(doc_id, current_page, total_pages)
-                    # Update progress in database
-                    self.db_manager.update_document_conversion(doc_id, "in_progress", progress=progress)
-                
-                # Create wrapper for process_page method
-                original_process_page = processor.process_page
-                
-                def process_page_with_progress(self_processor, args):
-                    page_num, image, use_llm = args
-                    # Call progress callback
-                    progress_callback(page_num + 1, total_pages)
-                    # Call original method
-                    return original_process_page(args)
-                
-                # Replace the method
-                processor.process_page = process_page_with_progress.__get__(processor, type(processor))
+                # Initialize our tracked PDF processor
+                processor = TrackedPDFProcessor(
+                    output_dir=output_dir, 
+                    worker=self, 
+                    doc_id=doc_id,
+                    db_manager=self.db_manager
+                )
                 
                 # Process the PDF
                 output_path = processor.process_pdf(file_path, use_llm=False)
@@ -163,17 +224,17 @@ class BatchConversionWorker(QRunnable):
                 if not os.path.exists(output_path):
                     raise FileNotFoundError(f"Output file was not created: {output_path}")
                 
-                # Restore original method
-                processor.process_page = original_process_page
-                
                 # Update database with completed status
                 self.db_manager.update_document_conversion(
-                    doc_id, "completed", progress=100, 
-                    converted_path=output_path, page_count=total_pages
+                    doc_id, "completed", progress=100,
+                    converted_path=output_path, page_count=processor.total_pages
                 )
                 
+                # Signal 100% completion
+                self.signals.progress.emit(doc_id, 100)
+                
                 # Signal completion
-                self.signals.completed.emit(doc_id, output_path, total_pages)
+                self.signals.completed.emit(doc_id, output_path, processor.total_pages)
                 
             except Exception as e:
                 error_msg = f"Conversion error: {str(e)}"
