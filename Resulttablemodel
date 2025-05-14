@@ -1,0 +1,135 @@
+# Custom Table Model for results display with sorting capabilities
+class ResultsTableModel(QAbstractTableModel):
+    def __init__(self, data=None):
+        super().__init__()
+        self._data = data if data is not None else []
+        self._headers = ["Data Element", "Procedure", "Knowledge Base", "Result", "Page"]
+        self._sort_columns = []  # List of tuples (column, order) to track sorting order
+        self._original_data = []  # Keep a copy of the original data for sorting
+        
+    def data(self, index, role):
+        if not index.isValid() or not (0 <= index.row() < len(self._data)):
+            return None
+            
+        row = index.row()
+        col = index.column()
+        
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return self._data[row]["data_element"]
+            elif col == 1:
+                return self._data[row]["procedure"]
+            elif col == 2:
+                return self._data[row]["kb_name"]
+            elif col == 3:
+                return self._data[row]["result"]
+            elif col == 4:
+                return str(self._data[row]["page"]) if self._data[row]["page"] is not None else "N/A"
+                
+        elif role == Qt.ItemDataRole.BackgroundRole:
+            # Alternate row colors for better readability
+            if row % 2 == 0:
+                return QColor(245, 245, 245)
+                
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col == 4:  # Center-align page numbers
+                return Qt.AlignmentFlag.AlignCenter
+            return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                
+        return None
+        
+    def rowCount(self, parent=None):
+        return len(self._data)
+        
+    def columnCount(self, parent=None):
+        return len(self._headers)
+        
+    def headerData(self, section, orientation, role):
+        if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
+            # Show sort indicator in header if this column is sorted
+            header_text = self._headers[section]
+            
+            # Check if this column is in the sort list
+            for col_idx, (col, order) in enumerate(self._sort_columns):
+                if col == section:
+                    # Add sort indicator and priority number if multiple columns are sorted
+                    order_indicator = "▲" if order == Qt.SortOrder.AscendingOrder else "▼"
+                    if len(self._sort_columns) > 1:
+                        return f"{header_text} {order_indicator}{col_idx+1}"
+                    else:
+                        return f"{header_text} {order_indicator}"
+            
+            return header_text
+        return None
+        
+    def set_data(self, data):
+        self.beginResetModel()
+        self._data = data.copy() if data else []
+        self._original_data = data.copy() if data else []
+        self._sort_columns = []  # Reset sort order when new data is set
+        self.endResetModel()
+    
+    def sort(self, column, order):
+        """Override sort method to handle column sorting"""
+        self.layoutAboutToBeChanged.emit()
+        
+        # Check if we're sorting on a column that's already in the sort list
+        existing_sort = None
+        for i, (col, _) in enumerate(self._sort_columns):
+            if col == column:
+                existing_sort = i
+                break
+                
+        # If the column is already sorted, update its order
+        if existing_sort is not None:
+            # If it's the same column with the same order, reverse the order
+            if self._sort_columns[existing_sort][1] == order:
+                self._sort_columns[existing_sort] = (column, Qt.SortOrder.DescendingOrder 
+                                                    if order == Qt.SortOrder.AscendingOrder 
+                                                    else Qt.SortOrder.AscendingOrder)
+            else:
+                # Update the existing entry with the new order
+                self._sort_columns[existing_sort] = (column, order)
+        else:
+            # Add new column to sort list (with Ctrl key for multi-column sort)
+            # Check if Ctrl key is pressed (for multi-column sort)
+            modifiers = QApplication.keyboardModifiers()
+            if modifiers == Qt.KeyboardModifier.ControlModifier:
+                self._sort_columns.append((column, order))
+            else:
+                # If Ctrl is not pressed, clear previous sort and set just this column
+                self._sort_columns = [(column, order)]
+        
+        # Start with original data
+        self._data = self._original_data.copy()
+        
+        # Perform multi-column sort by sorting from least to most significant
+        if self._sort_columns:
+            # Sort by each column in reverse order (last clicked is primary sort)
+            for sort_col, sort_order in reversed(self._sort_columns):
+                self._sort_by_column(sort_col, sort_order)
+            
+        self.layoutChanged.emit()
+    
+    def _sort_by_column(self, column, order):
+        """Helper method to sort by a specific column"""
+        reverse = (order == Qt.SortOrder.DescendingOrder)
+        
+        if column == 0:  # Data Element
+            self._data.sort(key=lambda x: x["data_element"].lower(), reverse=reverse)
+        elif column == 1:  # Procedure
+            self._data.sort(key=lambda x: x["procedure"].lower(), reverse=reverse)
+        elif column == 2:  # Knowledge Base
+            self._data.sort(key=lambda x: x["kb_name"].lower(), reverse=reverse)
+        elif column == 3:  # Result
+            self._data.sort(key=lambda x: x["result"].lower(), reverse=reverse)
+        elif column == 4:  # Page
+            # Sort by page number, treating None as -1 for sorting purposes
+            self._data.sort(key=lambda x: int(x["page"]) if x["page"] is not None else -1, reverse=reverse)
+
+
+      configuring the table appearance:
+python# Enable sorting
+self.results_table.setSortingEnabled(True)
+This should be added after the line where you set self.results_table.verticalHeader().setVisible(False).
+With these changes:
