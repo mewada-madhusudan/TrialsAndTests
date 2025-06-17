@@ -1,0 +1,139 @@
+from pyx.workflow import Workflow
+from collections import defaultdict
+
+# Load the Alteryx .yxmd workflow
+workflow = Workflow.read("your_workflow.yxmd")
+
+# Prepare connection mappings
+incoming = defaultdict(list)
+outgoing = defaultdict(list)
+
+for conn in workflow.connections:
+    src = conn.source.tool_id
+    tgt = conn.destination.tool_id
+    outgoing[src].append((tgt, conn.source.anchor, conn.destination.anchor))
+    incoming[tgt].append((src, conn.source.anchor, conn.destination.anchor))
+
+
+# Simple descriptions and key parameters by tool type
+def describe_tool(tool):
+    ttype = tool.tool_type.lower()
+    props = tool.properties or {}
+
+    if "input" in ttype:
+        return ("Reads data from a file, database, or external source.",
+                {"File": props.get("File", "N/A")})
+    
+    elif "output" in ttype:
+        return ("Writes data to a file, database, or external target.",
+                {"File": props.get("File", "N/A")})
+    
+    elif "filter" in ttype:
+        return ("Filters rows based on a boolean expression.",
+                {"Expression": props.get("Expression", "N/A")})
+    
+    elif "formula" in ttype:
+        return ("Creates new fields or modifies existing ones using expressions.",
+                {"Expressions": props})
+    
+    elif "multifieldformula" in ttype:
+        return ("Applies formula logic across multiple fields.",
+                {"Expression": props.get("Expression", "N/A")})
+    
+    elif "multiro" in ttype or "multirow" in ttype:
+        return ("Applies row-by-row calculations with access to adjacent rows.",
+                {"Expression": props.get("Expression", "N/A"),
+                 "GroupByFields": props.get("GroupByFields", "N/A")})
+    
+    elif "join" in ttype:
+        return ("Combines two datasets based on key fields.",
+                {"JoinFields": props.get("JoinKeys", "N/A")})
+    
+    elif "union" in ttype:
+        return ("Stacks multiple datasets by matching fields.",
+                {"AutoConfig": props.get("AutoConfig", "N/A")})
+    
+    elif "select" in ttype:
+        return ("Selects, renames, and reorders columns.",
+                {"Fields": props.get("SelectFields", props)})
+    
+    elif "sort" in ttype:
+        return ("Sorts records by specified fields.",
+                {"SortFields": props.get("Fields", "N/A")})
+    
+    elif "summarize" in ttype:
+        return ("Aggregates data using operations like Sum, Count, GroupBy, etc.",
+                {"SummarizeFields": props.get("FieldOperations", "N/A")})
+    
+    elif "transpose" in ttype:
+        return ("Converts columns into rows (vertical pivot).",
+                {"KeyField": props.get("KeyField", "N/A"),
+                 "DataFields": props.get("DataFields", "N/A")})
+    
+    elif "crosstab" in ttype:
+        return ("Creates a pivot table: rows → columns.",
+                {"GroupFields": props.get("GroupFields", "N/A"),
+                 "HeaderField": props.get("HeaderField", "N/A"),
+                 "ValueField": props.get("DataField", "N/A")})
+    
+    elif "cleansing" in ttype or "cleanse" in ttype:
+        return ("Cleans text fields by trimming, changing case, removing nulls, etc.",
+                {"Operations": props})
+    
+    elif "datetime" in ttype:
+        return ("Parses, formats, or extracts parts of date/time fields.",
+                {"Operation": props.get("Function", "N/A"),
+                 "Field": props.get("Field", "N/A")})
+    
+    elif "append" in ttype:
+        return ("Appends records from one stream to every row of another (cartesian join).",
+                {"Target": props.get("Target", "N/A")})
+    
+    elif "sample" in ttype:
+        return ("Selects a fixed number or percentage of rows.",
+                {"SampleType": props.get("SampleType", "N/A"),
+                 "SampleSize": props.get("SampleSize", "N/A")})
+    
+    elif "unique" in ttype:
+        return ("Filters to unique records based on key fields.",
+                {"UniqueFields": props.get("Fields", "N/A")})
+    
+    else:
+        return ("Performs a tool-specific or unsupported operation.",
+                props)
+
+
+
+# === Main summary output ===
+print("\n🔍 Alteryx Workflow Summary:\n" + "="*50)
+
+for tool in workflow.tools:
+    print(f"\n🛠 Tool ID: {tool.tool_id}")
+    print(f"   Type   : {tool.tool_type}")
+    print(f"   Name   : {tool.name or '[Unnamed Tool]'}")
+
+    # Describe purpose and parameters
+    purpose, parameters = describe_tool(tool)
+    print(f"   🧠 Purpose: {purpose}")
+    print(f"   📌 Parameters:")
+    for key, val in parameters.items():
+        val_str = str(val).replace("\n", " ").strip()
+        print(f"     - {key}: {val_str}")
+
+    # Incoming connections
+    if incoming[tool.tool_id]:
+        print(f"   🔗 Incoming Connections:")
+        for src, out_anchor, in_anchor in incoming[tool.tool_id]:
+            print(f"     ◀︎ From Tool {src} (via {out_anchor} → {in_anchor})")
+    else:
+        print("   🔗 Incoming Connections: None")
+
+    # Outgoing connections
+    if outgoing[tool.tool_id]:
+        print(f"   🔗 Outgoing Connections:")
+        for tgt, out_anchor, in_anchor in outgoing[tool.tool_id]:
+            print(f"     ▶︎ To Tool {tgt} (via {out_anchor} → {in_anchor})")
+    else:
+        print("   🔗 Outgoing Connections: None")
+
+    print("-" * 50)
