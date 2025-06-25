@@ -1,132 +1,79 @@
-def create_editable_pdf(self, texts, output_path):
-        """
-        Create an editable PDF from extracted texts with page numbers.
-        Ensures text stays within visible margins and handles proper word wrapping.
-        
-        Args:
-            texts (list): List of extracted text strings, one per page.
-            output_path (str): Path to save the output PDF.
-        """
-        c = canvas.Canvas(output_path, pagesize=letter)
-        width, height = letter
-        
-        # Define margins
-        left_margin = 40
-        right_margin = 40
-        top_margin = 40
-        bottom_margin = 50  # Increased bottom margin for page number
-        
-        # Calculate text width
-        text_width = width - left_margin - right_margin
-        
-        # Register a default font that supports a wide range of characters
+import sqlite3
+import pyodbc
+
+def get_sqlite_schema_and_data(sqlite_db_path):
+    conn = sqlite3.connect(sqlite_db_path)
+    cursor = conn.cursor()
+
+    # Get all table names
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+    tables = [row[0] for row in cursor.fetchall()]
+
+    schema = {}
+    data = {}
+
+    for table in tables:
+        # Get create statement
+        cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
+        create_stmt = cursor.fetchone()[0]
+
+        # Get data
+        cursor.execute(f"SELECT * FROM {table}")
+        rows = cursor.fetchall()
+        col_names = [description[0] for description in cursor.description]
+
+        schema[table] = create_stmt
+        data[table] = {"columns": col_names, "rows": rows}
+
+    conn.close()
+    return schema, data
+
+def convert_sqlite_to_access(sqlite_db_path, access_db_path):
+    # Step 1: Extract schema and data from SQLite
+    schema, data = get_sqlite_schema_and_data(sqlite_db_path)
+
+    # Step 2: Connect to Access DB
+    conn_str = (
+        r"DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
+        f"DBQ={access_db_path};"
+    )
+    access_conn = pyodbc.connect(conn_str)
+    access_cursor = access_conn.cursor()
+
+    for table, create_stmt in schema.items():
+        # Replace SQLite types with Access types (basic mapping)
+        create_stmt = create_stmt.replace("AUTOINCREMENT", "AUTOINCREMENT")
+        create_stmt = create_stmt.replace("INTEGER", "INT")
+        create_stmt = create_stmt.replace("TEXT", "TEXT")
+        create_stmt = create_stmt.replace("REAL", "DOUBLE")
+
         try:
-            pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
-            font_name = 'Arial'
+            print(f"Creating table {table}...")
+            access_cursor.execute(f"DROP TABLE {table}")  # Just in case
         except:
-            font_name = 'Helvetica'  # Fallback to built-in font
-        
-        font_size = 10
-        line_height = font_size * 1.2  # 120% of font size for readable line spacing
-        
-        c.setFont(font_name, font_size)
-        
-        for page_num, text in enumerate(texts, 1):
-            if not text:
-                # Add empty page with just a page number if text is empty
-                c.saveState()
-                c.setFont(font_name, font_size)
-                page_text = f"Page {page_num}"
-                page_width = c.stringWidth(page_text, font_name, font_size)
-                c.drawString((width - page_width) / 2, 30, page_text)
-                c.restoreState()
-                c.showPage()
-                continue
-                
-            # Current Y position (start from top)
-            y_position = height - top_margin
-            
-            # Split text into paragraphs
-            paragraphs = text.split('\n')
-            
-            for paragraph in paragraphs:
-                # Skip empty paragraphs
-                if not paragraph.strip():
-                    y_position -= line_height / 2  # Add a smaller space for empty lines
-                    continue
-                
-                # Process the paragraph for word wrapping
-                words = paragraph.split()
-                if not words:
-                    continue
-                    
-                current_line = words[0]
-                
-                for word in words[1:]:
-                    # Check if adding this word exceeds the line width
-                    test_line = current_line + " " + word
-                    line_width = c.stringWidth(test_line, font_name, font_size)
-                    
-                    if line_width <= text_width:
-                        # Word fits, add it to the current line
-                        current_line = test_line
-                    else:
-                        # Word doesn't fit, print current line and start a new one
-                        # Check if we need a new page
-                        if y_position < bottom_margin + line_height:
-                            # Add page number
-                            c.saveState()
-                            c.setFont(font_name, font_size)
-                            page_text = f"Page {page_num}"
-                            page_width = c.stringWidth(page_text, font_name, font_size)
-                            c.drawString((width - page_width) / 2, 30, page_text)
-                            c.restoreState()
-                            
-                            # Move to next page
-                            c.showPage()
-                            c.setFont(font_name, font_size)
-                            page_num += 1
-                            y_position = height - top_margin
-                        
-                        # Draw the line
-                        c.drawString(left_margin, y_position, current_line)
-                        y_position -= line_height
-                        current_line = word
-                
-                # Don't forget to print the last line of the paragraph
-                if current_line:
-                    # Check if we need a new page
-                    if y_position < bottom_margin + line_height:
-                        # Add page number
-                        c.saveState()
-                        c.setFont(font_name, font_size)
-                        page_text = f"Page {page_num}"
-                        page_width = c.stringWidth(page_text, font_name, font_size)
-                        c.drawString((width - page_width) / 2, 30, page_text)
-                        c.restoreState()
-                        
-                        # Move to next page
-                        c.showPage()
-                        c.setFont(font_name, font_size)
-                        page_num += 1
-                        y_position = height - top_margin
-                    
-                    # Draw the line
-                    c.drawString(left_margin, y_position, current_line)
-                    y_position -= line_height
-                
-                # Add extra space after paragraph
-                y_position -= line_height / 2
-            
-            # Add page number at the bottom center
-            c.saveState()
-            c.setFont(font_name, font_size)
-            page_text = f"Page {page_num}"
-            page_width = c.stringWidth(page_text, font_name, font_size)
-            c.drawString((width - page_width) / 2, 30, page_text)
-            c.restoreState()
-            
-            c.showPage()  # Move to next page
-        
-        c.save()
-        print(f"Created editable PDF: {output_path}")
+            pass
+
+        access_cursor.execute(create_stmt)
+
+        # Insert data
+        rows = data[table]["rows"]
+        cols = data[table]["columns"]
+        placeholders = ','.join(['?'] * len(cols))
+        col_names = ','.join(cols)
+
+        print(f"Inserting {len(rows)} rows into {table}...")
+        for row in rows:
+            access_cursor.execute(
+                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})", row
+            )
+
+    access_conn.commit()
+    access_cursor.close()
+    access_conn.close()
+    print("Migration complete!")
+
+# ==== Example Usage ====
+sqlite_file = r"C:\path\to\your\source.sqlite"
+access_file = r"C:\path\to\your\target.accdb"
+
+convert_sqlite_to_access(sqlite_file, access_file)
