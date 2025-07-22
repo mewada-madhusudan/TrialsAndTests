@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Request Tracker</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { Play, Pause, Trash2, Download, Filter, Globe, AlertCircle, ExternalLink } = lucide;
+
+        const AdvancedRequestTracker = () => {
+          const [requests, setRequests] = useState([]);
+          const [isTracking, setIsTracking] = useState(false);
+          const [filter, setFilter] = useState('all');
+          const [searchTerm, setSearchTerm] = useState('');
+          const [targetUrl, setTargetUrl] = useState('https://myapps.company.com');
+          const originalFetch = useRef(null);
+          const originalXMLHttpRequest = useRef(null);
+          const requestCounter = useRef(0);
+
+          // Create bookmarklet code
+          const createBookmarklet = () => {
+            const code = `let requests=JSON.parse(sessionStorage.getItem('requestTracker')||'[]');let requestCounter=Math.max(...requests.map(r=>r.id||0),0);const trackRequest=data=>{const request={...data,id:++requestCounter,timestamp:new Date().toISOString()};requests=[request,...requests.slice(0,999)];sessionStorage.setItem('requestTracker',JSON.stringify(requests));console.log('🔍 Tracked:',request.method,request.url,request.status)};const originalFetch=window.fetch;const OriginalXHR=window.XMLHttpRequest;window.fetch=async(...args)=>{const start=performance.now();const url=typeof args[0]==='string'?args[0]:args[0]?.url;const method=args[1]?.method||'GET';try{const response=await originalFetch(...args);trackRequest({method:method.toUpperCase(),url,status:response.status,statusText:response.statusText,duration:Math.round(performance.now()-start),type:'fetch',contentType:response.headers.get('content-type')||'unknown'});return response}catch(error){trackRequest({method:method.toUpperCase(),url,status:0,statusText:'Error',duration:Math.round(performance.now()-start),type:'fetch',error:error.message});throw error}};window.XMLHttpRequest=class extends OriginalXHR{constructor(){super();this._method='GET';this._url='';this._start=0;const originalOpen=this.open;const originalSend=this.send;this.open=function(method,url,...args){this._method=method?.toUpperCase();this._url=url;return originalOpen.call(this,method,url,...args)};this.send=function(...args){this._start=performance.now();this.addEventListener('loadend',()=>{trackRequest({method:this._method,url:this._url,status:this.status,statusText:this.statusText,duration:Math.round(performance.now()-this._start),type:'xhr',contentType:this.getResponseHeader('content-type')||'unknown'})});return originalSend.call(this,...args)}}};console.log('✅ Request tracking activated!');`;
+            return `javascript:(function(){${code}})();`;
+          };
+
+          // Enhanced request interceptor
+          const setupAdvancedTracking = () => {
+            if (isTracking) return;
+
+            originalFetch.current = window.fetch;
+            originalXMLHttpRequest.current = window.XMLHttpRequest;
+
+            const trackRequest = (requestData) => {
+              const id = ++requestCounter.current;
+              const request = { ...requestData, id, timestamp: new Date().toISOString() };
+              
+              setRequests(prev => {
+                const updated = [request, ...prev];
+                try {
+                  sessionStorage.setItem('requestTracker', JSON.stringify(updated.slice(0, 1000)));
+                } catch (e) {
+                  console.warn('Could not save to sessionStorage');
+                }
+                return updated;
+              });
+            };
+
+            // Enhanced fetch override
+            window.fetch = async (...args) => {
+              const startTime = performance.now();
+              const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || 'unknown';
+              const method = args[1]?.method || 'GET';
+              const headers = args[1]?.headers || {};
+              
+              try {
+                const response = await originalFetch.current(...args);
+                const endTime = performance.now();
+                
+                const responseHeaders = {};
+                if (response.headers) {
+                  for (let [key, value] of response.headers.entries()) {
+                    responseHeaders[key] = value;
+                  }
+                }
+                
+                trackRequest({
+                  method: method.toUpperCase(),
+                  url,
+                  status: response.status,
+                  statusText: response.statusText,
+                  duration: Math.round(endTime - startTime),
+                  type: 'fetch',
+                  size: responseHeaders['content-length'] || 'unknown',
+                  contentType: responseHeaders['content-type'] || 'unknown',
+                  requestHeaders: headers,
+                  responseHeaders,
+                  redirected: response.redirected,
+                  fromCache: responseHeaders['x-cache'] === 'HIT'
+                });
+                
+                return response;
+              } catch (error) {
+                const endTime = performance.now();
+                
+                trackRequest({
+                  method: method.toUpperCase(),
+                  url,
+                  status: 0,
+                  statusText: 'Network Error',
+                  duration: Math.round(endTime - startTime),
+                  type: 'fetch',
+                  size: 'unknown',
+                  contentType: 'unknown',
+                  requestHeaders: headers,
+                  error: error.message,
+                  failed: true
+                });
+                
+                throw error;
+              }
+            };
+
+            // Try to load previous requests
+            try {
+              const stored = sessionStorage.getItem('requestTracker');
+              if (stored) {
+                const previousRequests = JSON.parse(stored);
+                setRequests(previousRequests);
+                requestCounter.current = Math.max(...previousRequests.map(r => r.id || 0), 0);
+              }
+            } catch (e) {
+              console.warn('Could not load previous requests');
+            }
+
+            setIsTracking(true);
+          };
+
+          const stopTracking = () => {
+            if (!isTracking) return;
+            
+            if (originalFetch.current) {
+              window.fetch = originalFetch.current;
+            }
+            if (originalXMLHttpRequest.current) {
+              window.XMLHttpRequest = originalXMLHttpRequest.current;
+            }
+            
+            setIsTracking(false);
+          };
+
+          const clearRequests = () => {
+            setRequests([]);
+            requestCounter.current = 0;
+            try {
+              sessionStorage.removeItem('requestTracker');
+            } catch (e) {
+              console.warn('Could not clear sessionStorage');
+            }
+          };
+
+          const exportRequests = () => {
+            const dataStr = JSON.stringify(filteredRequests, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `requests-${new Date().toISOString().split('T')[0]}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+          };
+
+          const openTrackedTab = () => {
+            const bookmarkletCode = createBookmarklet();
+            
+            const instructions = `OPTION 1: BOOKMARKLET (EASIEST)
+==============================
+1. Copy this bookmarklet URL and save it as a bookmark:
+${bookmarkletCode}
+
+2. Navigate to ${targetUrl}
+3. Click the bookmarklet to start tracking
+
+OPTION 2: CONSOLE METHOD
+========================
+If pasting is blocked, type "allow pasting" in console first, then paste the tracking code.`;
+
+            navigator.clipboard.writeText(instructions).then(() => {
+              window.open(targetUrl, '_blank');
+              alert('Instructions copied to clipboard! Check the console for the full tracking code.');
+            }).catch(() => {
+              window.open(targetUrl, '_blank');
+              console.log('Instructions:', instructions);
+              alert('Please copy the instructions from the browser console.');
+            });
+          };
+
+          const loadStoredRequests = () => {
+            try {
+              const stored = sessionStorage.getItem('requestTracker');
+              if (stored) {
+                const previousRequests = JSON.parse(stored);
+                setRequests(previousRequests);
+                requestCounter.current = Math.max(...previousRequests.map(r => r.id || 0), 0);
+              }
+            } catch (e) {
+              console.warn('Could not load stored requests');
+            }
+          };
+
+          const filteredRequests = requests.filter(request => {
+            const matchesFilter = filter === 'all' || request.type === filter;
+            const matchesSearch = request.url?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                 request.method?.toLowerCase().includes(searchTerm.toLowerCase());
+            return matchesFilter && matchesSearch;
+          });
+
+          const getStatusColor = (status) => {
+            if (status >= 200 && status < 300) return 'text-green-600';
+            if (status >= 300 && status < 400) return 'text-yellow-600';
+            if (status >= 400 && status < 500) return 'text-orange-600';
+            if (status >= 500) return 'text-red-600';
+            if (status === 0) return 'text-red-600';
+            return 'text-gray-600';
+          };
+
+          useEffect(() => {
+            loadStoredRequests();
+            
+            const interval = setInterval(() => {
+              if (!isTracking) {
+                loadStoredRequests();
+              }
+            }, 2000);
+            
+            return () => clearInterval(interval);
+          }, [isTracking]);
+
+          return React.createElement('div', { className: "min-h-screen bg-gray-50 p-4" },
+            React.createElement('div', { className: "max-w-7xl mx-auto" },
+              React.createElement('div', { className: "bg-white rounded-lg shadow-lg" },
+                // Header
+                React.createElement('div', { className: "p-6 border-b border-gray-200" },
+                  React.createElement('div', { className: "flex items-center justify-between mb-4" },
+                    React.createElement('h1', { className: "text-2xl font-bold text-gray-900" }, 'Advanced Request Tracker'),
+                    React.createElement('div', { className: "flex items-center space-x-2" },
+                      React.createElement('span', { 
+                        className: `px-2 py-1 rounded-full text-xs font-medium ${
+                          isTracking ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }` 
+                      }, isTracking ? 'Tracking Current Tab' : 'Tracking Inactive')
+                    )
+                  ),
+                  
+                  // Target URL Input
+                  React.createElement('div', { className: "mb-4" },
+                    React.createElement('label', { className: "block text-sm font-medium text-gray-700 mb-2" },
+                      'Target Website URL:'
+                    ),
+                    React.createElement('div', { className: "flex space-x-2" },
+                      React.createElement('input', {
+                        type: 'url',
+                        value: targetUrl,
+                        onChange: (e) => setTargetUrl(e.target.value),
+                        className: "flex-1 border border-gray-300 rounded-lg px-3 py-2",
+                        placeholder: "https://myapps.company.com"
+                      }),
+                      React.createElement('button', {
+                        onClick: openTrackedTab,
+                        className: "flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                      },
+                        React.createElement(ExternalLink, { size: 16 }),
+                        React.createElement('span', null, 'Open & Track')
+                      )
+                    )
+                  ),
+                  
+                  // Instructions
+                  React.createElement('div', { className: "bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4" },
+                    React.createElement('div', { className: "flex items-start space-x-3" },
+                      React.createElement(AlertCircle, { size: 20, className: "text-blue-600 mt-0.5 flex-shrink-0" }),
+                      React.createElement('div', { className: "text-sm text-blue-800" },
+                        React.createElement('p', { className: "font-medium mb-1" }, 'For External Website Tracking:'),
+                        React.createElement('ol', { className: "list-decimal list-inside space-y-1" },
+                          React.createElement('li', null, 'Click "Open & Track" to get both bookmarklet and console options'),
+                          React.createElement('li', null, React.createElement('strong', null, 'Bookmarklet method:'), ' Save the provided bookmarklet URL as a bookmark and click it on any page'),
+                          React.createElement('li', null, React.createElement('strong', null, 'Console method:'), ' If paste is blocked, type "allow pasting" in console first'),
+                          React.createElement('li', null, 'Navigate and interact with the website, then return here to view requests')
+                        )
+                      )
+                    )
+                  ),
+                  
+                  // Controls
+                  React.createElement('div', { className: "flex flex-wrap items-center gap-3" },
+                    React.createElement('button', {
+                      onClick: isTracking ? stopTracking : setupAdvancedTracking,
+                      className: `flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                        isTracking 
+                          ? 'bg-red-600 hover:bg-red-700 text-white' 
+                          : 'bg-green-600 hover:bg-green-700 text-white'
+                      }`
+                    },
+                      isTracking ? React.createElement(Pause, { size: 16 }) : React.createElement(Play, { size: 16 }),
+                      React.createElement('span', null, isTracking ? 'Stop Tracking' : 'Start Tracking (Current Tab)')
+                    ),
+                    
+                    React.createElement('button', {
+                      onClick: loadStoredRequests,
+                      className: "px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+                    }, 'Refresh Data'),
+                    
+                    React.createElement('button', {
+                      onClick: clearRequests,
+                      className: "flex items-center space-x-2 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+                    },
+                      React.createElement(Trash2, { size: 16 }),
+                      React.createElement('span', null, 'Clear')
+                    ),
+                    
+                    React.createElement('button', {
+                      onClick: exportRequests,
+                      disabled: requests.length === 0,
+                      className: "flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
+                    },
+                      React.createElement(Download, { size: 16 }),
+                      React.createElement('span', null, 'Export')
+                    )
+                  )
+                ),
+
+                // Filters
+                React.createElement('div', { className: "p-6 border-b border-gray-200 bg-gray-50" },
+                  React.createElement('div', { className: "flex flex-wrap items-center gap-4" },
+                    React.createElement('div', { className: "flex items-center space-x-2" },
+                      React.createElement(Filter, { size: 16, className: "text-gray-500" }),
+                      React.createElement('select', {
+                        value: filter,
+                        onChange: (e) => setFilter(e.target.value),
+                        className: "border border-gray-300 rounded-lg px-3 py-1 bg-white"
+                      },
+                        React.createElement('option', { value: 'all' }, 'All Types'),
+                        React.createElement('option', { value: 'fetch' }, 'Fetch'),
+                        React.createElement('option', { value: 'xhr' }, 'XMLHttpRequest')
+                      )
+                    ),
+                    
+                    React.createElement('input', {
+                      type: 'text',
+                      placeholder: 'Search URLs or methods...',
+                      value: searchTerm,
+                      onChange: (e) => setSearchTerm(e.target.value),
+                      className: "flex-1 max-w-md border border-gray-300 rounded-lg px-3 py-1"
+                    }),
+                    
+                    React.createElement('div', { className: "text-sm text-gray-600" },
+                      `${filteredRequests.length} of ${requests.length} requests`
+                    )
+                  )
+                ),
+
+                // Request List
+                React.createElement('div', { className: "overflow-x-auto" },
+                  filteredRequests.length === 0 ? 
+                    React.createElement('div', { className: "p-12 text-center text-gray-500" },
+                      React.createElement('div', { className: "mb-4" },
+                        React.createElement(Globe, { size: 48, className: "mx-auto text-gray-300" })
+                      ),
+                      React.createElement('p', { className: "text-lg font-medium" }, 'No requests tracked'),
+                      React.createElement('p', { className: "mt-2 max-w-md mx-auto" },
+                        'Use "Open & Track" to monitor external websites, or "Start Tracking" for the current tab'
+                      )
+                    ) :
+                    React.createElement('div', { className: "min-w-full" },
+                      React.createElement('table', { className: "w-full" },
+                        React.createElement('thead', { className: "bg-gray-50 border-b border-gray-200" },
+                          React.createElement('tr', null,
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'Time'),
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'Method'),
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'URL'),
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'Status'),
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'Duration'),
+                            React.createElement('th', { className: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" }, 'Type')
+                          )
+                        ),
+                        React.createElement('tbody', { className: "bg-white divide-y divide-gray-200" },
+                          filteredRequests.map((request, index) =>
+                            React.createElement('tr', { 
+                              key: request.id, 
+                              className: `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${request.failed ? 'bg-red-50' : ''}` 
+                            },
+                              React.createElement('td', { className: "px-6 py-4 whitespace-nowrap text-sm text-gray-600" },
+                                new Date(request.timestamp).toLocaleTimeString()
+                              ),
+                              React.createElement('td', { className: "px-6 py-4 whitespace-nowrap" },
+                                React.createElement('span', { className: "px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded" },
+                                  request.method
+                                )
+                              ),
+                              React.createElement('td', { className: "px-6 py-4 text-sm text-gray-900 max-w-md" },
+                                React.createElement('div', { className: "truncate", title: request.url }, request.url),
+                                request.contentType && request.contentType !== 'unknown' && 
+                                  React.createElement('div', { className: "text-xs text-gray-500 truncate" }, request.contentType)
+                              ),
+                              React.createElement('td', { className: "px-6 py-4 whitespace-nowrap text-sm" },
+                                React.createElement('span', { className: `font-medium ${getStatusColor(request.status)}` },
+                                  `${request.status} ${request.statusText}`
+                                ),
+                                request.error && 
+                                  React.createElement('div', { className: "text-xs text-red-500 truncate max-w-32", title: request.error },
+                                    request.error
+                                  )
+                              ),
+                              React.createElement('td', { className: "px-6 py-4 whitespace-nowrap text-sm text-gray-600" },
+                                `${request.duration}ms`
+                              ),
+                              React.createElement('td', { className: "px-6 py-4 whitespace-nowrap" },
+                                React.createElement('span', { 
+                                  className: `px-2 py-1 text-xs font-medium rounded ${
+                                    request.type === 'fetch' 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : 'bg-orange-100 text-orange-800'
+                                  }` 
+                                }, request.type?.toUpperCase())
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                )
+              )
+            )
+          );
+        };
+
+        ReactDOM.render(React.createElement(AdvancedRequestTracker), document.getElementById('root'));
+    </script>
+</body>
+</html>
