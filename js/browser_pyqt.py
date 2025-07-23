@@ -174,7 +174,7 @@ class CustomWebEnginePage(QWebEnginePage):
 class BrowserWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Python Browser with Request/Response Logging")
+        self.setWindowTitle("Python Browser (Incognito Mode) - Request/Response Logging")
         self.setGeometry(100, 100, 1600, 1000)
         
         # Create network monitor
@@ -223,8 +223,8 @@ class BrowserWindow(QMainWindow):
         # Web view
         self.web_view = QWebEngineView()
         
-        # Create custom profile and interceptor
-        self.profile = QWebEngineProfile.defaultProfile()
+        # Create custom INCOGNITO profile and interceptor
+        self.profile = self._create_incognito_profile()
         self.interceptor = RequestInterceptor(self.network_monitor)
         self.profile.setUrlRequestInterceptor(self.interceptor)
         
@@ -241,6 +241,11 @@ class BrowserWindow(QMainWindow):
         # Right side - Request/Response Log
         log_widget = QWidget()
         log_layout = QVBoxLayout(log_widget)
+        
+        # Add incognito status indicator
+        incognito_label = QLabel("🕵️ INCOGNITO MODE - No data stored")
+        incognito_label.setStyleSheet("color: #666; font-weight: bold; padding: 5px; background-color: #f0f0f0; border-radius: 3px;")
+        log_layout.addWidget(incognito_label)
         
         log_layout.addWidget(QLabel("Request/Response Log:"))
         
@@ -266,6 +271,12 @@ class BrowserWindow(QMainWindow):
         button_layout.addWidget(export_button)
         button_layout.addWidget(self.auto_scroll_button)
         
+        # Add incognito controls
+        self.clear_data_button = QPushButton("Clear All Data")
+        self.clear_data_button.clicked.connect(self.clear_all_data)
+        self.clear_data_button.setStyleSheet("background-color: #ff6b6b; color: white;")
+        button_layout.addWidget(self.clear_data_button)
+        
         log_layout.addWidget(self.log_text)
         log_layout.addLayout(button_layout)
         
@@ -281,6 +292,64 @@ class BrowserWindow(QMainWindow):
         
         # Load initial page
         self.web_view.load(QUrl("https://httpbin.org/redirect/3"))
+        
+    def _create_incognito_profile(self):
+        """Create an incognito/private browsing profile"""
+        # Create a new off-the-record (incognito) profile
+        profile = QWebEngineProfile()
+        
+        # Configure incognito settings
+        profile.setHttpCacheType(QWebEngineProfile.NoCache)
+        profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
+        
+        # Set custom user agent to indicate incognito browsing
+        user_agent = profile.httpUserAgent() + " IncognitoBrowser/1.0"
+        profile.setHttpUserAgent(user_agent)
+        
+        # Disable various tracking and storage features
+        try:
+            # These might not be available in all PyQt5 versions
+            if hasattr(profile, 'setHttpCacheMaximumSize'):
+                profile.setHttpCacheMaximumSize(0)
+        except AttributeError:
+            pass
+            
+        print("🕵️ Incognito mode enabled - No data will be stored persistently")
+        print(f"User Agent: {profile.httpUserAgent()}")
+        
+        return profile
+    
+    def clear_all_data(self):
+        """Clear all browsing data (incognito-style cleanup)"""
+        try:
+            # Clear the current page
+            self.web_view.load(QUrl("about:blank"))
+            
+            # Clear cookies from the profile
+            if hasattr(self.profile, 'cookieStore'):
+                self.profile.cookieStore().deleteAllCookies()
+            
+            # Clear any cached data
+            if hasattr(self.profile, 'clearHttpCache'):
+                self.profile.clearHttpCache()
+            
+            # Clear request logs
+            self.clear_log()
+            
+            print("🧹 All browsing data cleared (incognito cleanup)")
+            
+        except Exception as e:
+            print(f"Error clearing data: {e}")
+    
+    def closeEvent(self, event):
+        """Override close event to ensure cleanup"""
+        print("🕵️ Closing incognito browser - all data will be permanently deleted")
+        
+        # Clear all data before closing
+        self.clear_all_data()
+        
+        # Accept the close event
+        event.accept()
         
     def on_request_finished(self, request_data):
         """Handle when a request-response pair is complete"""
