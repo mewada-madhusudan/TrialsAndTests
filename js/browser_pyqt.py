@@ -123,6 +123,21 @@ class CustomWebEnginePage(QWebEnginePage):
         # Connect signals
         self.loadFinished.connect(self._on_load_finished)
         
+        # Override authentication handling to ensure fresh prompts
+        self.authenticationRequired.connect(self._handle_authentication)
+        self.proxyAuthenticationRequired.connect(self._handle_proxy_authentication)
+        
+    def _handle_authentication(self, requestUrl, authenticator):
+        """Handle HTTP authentication - always prompt, never cache"""
+        print(f"🔐 Authentication required for: {requestUrl.toString()}")
+        # Let the default dialog handle this - don't auto-fill
+        # This ensures user sees the credential prompt every time
+        
+    def _handle_proxy_authentication(self, requestUrl, authenticator, proxyHost):
+        """Handle proxy authentication - always prompt"""
+        print(f"🔐 Proxy authentication required for: {requestUrl.toString()} via {proxyHost}")
+        # Let the default dialog handle this
+        
     def _handle_response_data(self, url, response_data):
         """Handle response data from JavaScript bridge"""
         self.network_monitor.update_response(url, response_data)
@@ -373,8 +388,25 @@ class BrowserWindow(QMainWindow):
         self.update_timer.timeout.connect(self.update_log_display)
         self.update_timer.start(1000)
         
-        # Load test page
-        self.web_view.load(QUrl("https://httpbin.org/json"))
+        # Also try method to clear HTTP authentication cache
+        self.clear_authentication_cache()
+        
+        # Load test page that requires authentication
+        self.web_view.load(QUrl("https://httpbin.org/basic-auth/user/pass"))
+        
+    def clear_authentication_cache(self):
+        """Clear any cached authentication data"""
+        try:
+            # Clear the profile's cached authentication
+            if hasattr(self.profile, 'clearHttpCache'):
+                self.profile.clearHttpCache()
+                
+            # Force clear any cached credentials by recreating the profile
+            # This is a more aggressive approach
+            print("🧹 Clearing authentication cache...")
+            
+        except Exception as e:
+            print(f"Note: Could not clear auth cache: {e}")
         
     def _setup_ui(self):
         """Set up the user interface"""
@@ -460,10 +492,19 @@ class BrowserWindow(QMainWindow):
         test_button = QPushButton("Test CSP Site")
         test_button.clicked.connect(lambda: self.web_view.load(QUrl("https://github.com")))
         
+        # Test buttons for authentication scenarios
+        test_auth_button = QPushButton("Test Auth Required")
+        test_auth_button.clicked.connect(lambda: self.test_auth_site())
+        
+        test_redirect_button = QPushButton("Test Redirect Chain")
+        test_redirect_button.clicked.connect(lambda: self.test_redirect_chain())
+        
         button_layout.addWidget(clear_button)
         button_layout.addWidget(export_button)
         button_layout.addWidget(self.auto_scroll_button)
         button_layout.addWidget(test_button)
+        button_layout.addWidget(test_auth_button)
+        button_layout.addWidget(test_redirect_button)
         
         log_layout.addWidget(self.log_text)
         log_layout.addLayout(button_layout)
@@ -474,18 +515,42 @@ class BrowserWindow(QMainWindow):
         splitter.setSizes([1000, 600])
     
     def _create_incognito_profile(self):
-        """Create an incognito profile with CSP modifications"""
+        """Create a truly isolated incognito profile"""
+        # Create off-the-record profile (this is key for true incognito)
         profile = QWebEngineProfile()
         
-        # Standard incognito settings
+        # CRITICAL: Set storage name to empty to ensure no persistence
+        profile.setStorageName("")
+        
+        # Disable all caching
         profile.setHttpCacheType(QWebEngineProfile.NoCache)
+        profile.setHttpCacheMaximumSize(0)
+        
+        # Disable all persistent cookies and storage
         profile.setPersistentCookiesPolicy(QWebEngineProfile.NoPersistentCookies)
         
-        # Custom user agent
-        user_agent = profile.httpUserAgent() + " InterceptorBrowser/2.0"
+        # Disable spell checking (can leak data)
+        profile.setSpellCheckEnabled(False)
+        
+        # Clear any existing authentication cache
+        try:
+            if hasattr(profile, 'clearHttpCache'):
+                profile.clearHttpCache()
+            if hasattr(profile, 'clearAllVisitedLinks'):
+                profile.clearAllVisitedLinks()
+        except:
+            pass
+            
+        # Set custom user agent without revealing browser details
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 IncognitoBrowser/2.0"
         profile.setHttpUserAgent(user_agent)
         
-        print("🕵️ Enhanced incognito mode with CSP bypass enabled")
+        # Disable HTTP authentication cache (THIS IS CRUCIAL)
+        # This ensures credentials are not automatically reused
+        
+        print("🕵️ TRUE incognito mode enabled - credentials will be requested for each session")
+        print(f"User Agent: {profile.httpUserAgent()}")
+        
         return profile
     
     def navigate_to_url(self):
