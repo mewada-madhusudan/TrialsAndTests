@@ -12,6 +12,7 @@ from shareplum import Office365
 from shareplum.site import Version
 import json
 import logging
+import pandas as pd
 from datetime import datetime
 
 # Set up logging
@@ -80,6 +81,52 @@ class MaterialButton(QPushButton):
         """)
         self.setCursor(QCursor(Qt.PointingHandCursor))
         self.setMinimumHeight(36)
+
+class UpdateButton(MaterialButton):
+    def __init__(self, row_index, *args, **kwargs):
+        super().__init__("Update", primary=True, *args, **kwargs)
+        self.row_index = row_index
+        self.setEnabled(False)  # Initially disabled
+        self.setFixedWidth(80)
+        
+        # Style for disabled state
+        self.update_style()
+    
+    def update_style(self):
+        if self.isEnabled():
+            color = "#4CAF50"  # Green for enabled
+            hover_color = "#45a049"
+            text_color = "white"
+        else:
+            color = "#cccccc"  # Gray for disabled
+            hover_color = "#cccccc"
+            text_color = "#666666"
+        
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                color: {text_color};
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+            QPushButton:pressed {{
+                margin: 1px;
+            }}
+            QPushButton:disabled {{
+                background-color: #cccccc;
+                color: #666666;
+            }}
+        """)
+    
+    def setEnabled(self, enabled):
+        super().setEnabled(enabled)
+        self.update_style()
 
 class ConfigDialog(QDialog):
     def __init__(self, parent=None):
@@ -290,10 +337,10 @@ class SharepointTableApp(QMainWindow):
         self.initUI()
         self.sharepoint_site = None
         self.sharepoint_list = None
-        self.data = []
+        self.df = pd.DataFrame()  # Initialize empty DataFrame
+        self.original_df = pd.DataFrame()  # Keep original data for comparison
         self.columns = []
-        self.modified_rows = set()
-        self.current_row = -1
+        self.update_buttons = []  # Store update buttons
         self.connected = False
         
         # Set app-wide font
@@ -305,7 +352,7 @@ class SharepointTableApp(QMainWindow):
     
     def initUI(self):
         self.setWindowTitle("SharePoint List Editor")
-        self.setGeometry(100, 100, 1300, 800)
+        self.setGeometry(100, 100, 1400, 800)  # Slightly wider to accommodate update buttons
         
         # Set stylesheet for the entire application
         self.setStyleSheet("""
@@ -358,10 +405,7 @@ class SharepointTableApp(QMainWindow):
         self.refresh_btn.setEnabled(False)
         toolbar_layout.addWidget(self.refresh_btn)
         
-        self.save_btn = MaterialButton("Save Changes", primary=True)
-        self.save_btn.clicked.connect(self.save_changes)
-        self.save_btn.setEnabled(False)
-        toolbar_layout.addWidget(self.save_btn)
+        # Remove the bulk save button since we're using individual row updates
         
         header_layout.addWidget(toolbar_widget)
         
@@ -383,7 +427,6 @@ class SharepointTableApp(QMainWindow):
         # Create table widget with Material Design
         self.table = MaterialTableWidget()
         self.table.cellChanged.connect(self.on_cell_changed)
-        self.table.cellClicked.connect(self.on_cell_clicked)
         main_layout.addWidget(self.table)
         
         # Create status bar with progress indicator
@@ -435,7 +478,6 @@ class SharepointTableApp(QMainWindow):
             
             self.connected = True
             self.refresh_btn.setEnabled(True)
-            self.save_btn.setEnabled(True)
             
             # Update UI to show connected state
             self.connection_status.setText("Connected to SharePoint")
@@ -471,23 +513,30 @@ class SharepointTableApp(QMainWindow):
             self.table.setEnabled(False)
             
             # Get data from SharePoint list
-            self.data = self.sharepoint_list.GetListItems()
+            data = self.sharepoint_list.GetListItems()
+            
+            # Convert to DataFrame
+            if data:
+                self.df = pd.DataFrame(data)
+                self.original_df = self.df.copy()  # Keep original for comparison
+                self.columns = list(self.df.columns)
+            else:
+                self.df = pd.DataFrame()
+                self.original_df = pd.DataFrame()
+                self.columns = []
             
             # Restore UI state
             QApplication.restoreOverrideCursor()
             self.table.setEnabled(True)
             
-            if not self.data:
+            if self.df.empty:
                 self.status_bar.showMessage("No data found in the list")
                 self.record_count.setText("0 records")
                 return
             
-            # Get column names from the first item
-            self.columns = list(self.data[0].keys())
-            
             # Set up table
             self.setup_table()
-            self.status_bar.showMessage(f"Loaded {len(self.data)} rows from SharePoint")
+            self.status_bar.showMessage(f"Loaded {len(self.df)} rows from SharePoint")
             
             # Show success animation - pulse the table briefly
             original_style = self.table.styleSheet()
@@ -504,232 +553,4 @@ class SharepointTableApp(QMainWindow):
             self.status_bar.showMessage("Failed to fetch data")
     
     def setup_table(self):
-        # Clear previous data and signal connections
-        self.table.blockSignals(True)
-        self.table.clearContents()
-        self.modified_rows.clear()
-        
-        # Set columns and rows
-        self.table.setColumnCount(len(self.columns))
-        self.table.setRowCount(len(self.data))
-        self.table.setHorizontalHeaderLabels(self.columns)
-        
-        # Set column widths to auto-resize
-        header = self.table.horizontalHeader()
-        for i in range(len(self.columns)):
-            header.setSectionResizeMode(i, QHeaderView.Stretch)
-        
-        # Fill data
-        for row_idx, row_data in enumerate(self.data):
-            for col_idx, col_name in enumerate(self.columns):
-                value = row_data.get(col_name, "")
-                item = QTableWidgetItem(str(value))
-                item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-                # Add subtle padding via a small vertical size
-                self.table.setRowHeight(row_idx, 40)
-                self.table.setItem(row_idx, col_idx, item)
-        
-        # Update the record count label
-        self.record_count.setText(f"{len(self.data)} records")
-        
-        self.table.blockSignals(False)
-    
-    def on_cell_changed(self, row, col):
-        if row == self.current_row:
-            # Change background color of the modified cell with a soft Material Design color
-            item = self.table.item(row, col)
-            if item:
-                item.setBackground(QColor("#FFF9C4"))  # Light yellow from Material palette
-                # Show a subtle indication in the status bar
-                self.status_bar.showMessage(f"Cell at row {row+1}, column '{self.columns[col]}' modified", 3000)
-        
-    def on_cell_clicked(self, row, col):
-        if self.current_row != -1 and self.current_row != row:
-            # User has changed rows, mark previous row as modified
-            self.modified_rows.add(self.current_row)
-            # Show indicator in the status bar
-            self.status_bar.showMessage(f"Row {self.current_row+1} marked for update", 3000)
-        
-        self.current_row = row
-    
-    def filter_table(self):
-        search_text = self.search_input.text().lower()
-        
-        for row in range(self.table.rowCount()):
-            should_show = False
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-                if item and search_text in item.text().lower():
-                    should_show = True
-                    break
-            
-            self.table.setRowHidden(row, not should_show)
-    
-    def save_changes(self):
-        if not self.connected or not self.modified_rows:
-            if not self.modified_rows:
-                QMessageBox.information(self, "No Changes", "No rows have been modified.")
-            return
-        
-        try:
-            # Show saving state
-            QApplication.setOverrideCursor(Qt.WaitCursor)
-            self.status_bar.showMessage("Saving changes to SharePoint...")
-            
-            update_count = 0
-            for row_idx in self.modified_rows:
-                # Extract data from modified row
-                updated_data = {}
-                for col_idx, col_name in enumerate(self.columns):
-                    item = self.table.item(row_idx, col_idx)
-                    if item:
-                        updated_data[col_name] = item.text()
-                
-                # Get ID or unique identifier for the row
-                id_field = self.columns[0]  # Assuming first column is the ID
-                item_id = updated_data.get(id_field)
-                
-                # Update the item in SharePoint
-                self.sharepoint_list.UpdateListItem(updated_data, id_field, item_id)
-                update_count += 1
-                
-                # Add visual feedback as each row updates
-                for col_idx in range(self.table.columnCount()):
-                    item = self.table.item(row_idx, col_idx)
-                    if item:
-                        # Reset to white background
-                        item.setBackground(QColor(255, 255, 255)) 
-                        # Brief success indicator animation
-                        QApplication.processEvents()
-                        item.setBackground(QColor("#E8F5E9"))  # Light green
-                        QTimer.singleShot(300, lambda item=item: item.setBackground(QColor(255, 255, 255)))
-            
-            # Restore cursor
-            QApplication.restoreOverrideCursor()
-            
-            # Clear modified rows set
-            self.modified_rows.clear()
-            
-            # Show success message
-            success_msg = f"Successfully updated {update_count} rows in SharePoint."
-            QMessageBox.information(self, "Update Complete", success_msg)
-            
-            # Update status bar
-            timestamp = datetime.now().strftime('%H:%M:%S')
-            self.status_bar.showMessage(f"Updated {update_count} rows at {timestamp}")
-            
-        except Exception as e:
-            # Restore cursor
-            QApplication.restoreOverrideCursor()
-            
-            logger.error(f"Error saving changes: {e}")
-            QMessageBox.critical(self, "Save Error", f"Failed to save changes: {str(e)}")
-            self.status_bar.showMessage("Failed to save changes")")
-            self.status_bar.showMessage("Failed to save changes")
-    
-    def closeEvent(self, event):
-        # Ask user if they want to save changes before closing
-        if self.modified_rows:
-            # Custom styled message box
-            message_box = QMessageBox(self)
-            message_box.setWindowTitle("Save Changes")
-            message_box.setText("You have unsaved changes.")
-            message_box.setInformativeText("Do you want to save them before quitting?")
-            
-            # Style the message box
-            message_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: #ffffff;
-                    color: #212121;
-                }
-                QPushButton {
-                    background-color: #2196F3;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 8px 16px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #1976D2;
-                }
-                QPushButton#discard {
-                    background-color: #e0e0e0;
-                    color: #424242;
-                }
-                QPushButton#discard:hover {
-                    background-color: #bdbdbd;
-                }
-            """)
-            
-            # Create custom buttons
-            save_btn = message_box.addButton("Save", QMessageBox.AcceptRole)
-            discard_btn = message_box.addButton("Discard", QMessageBox.DestructiveRole)
-            discard_btn.setObjectName("discard")
-            cancel_btn = message_box.addButton("Cancel", QMessageBox.RejectRole)
-            
-            message_box.exec_()
-            
-            clicked_button = message_box.clickedButton()
-            
-            if clicked_button == save_btn:
-                self.save_changes()
-                event.accept()
-            elif clicked_button == discard_btn:
-                event.accept()
-            else:
-                event.ignore()
-        else:
-            event.accept()
-
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    
-    # Use Fusion style as a base for material design
-    app.setStyle('Fusion')
-    
-    # Apply Material Design color palette
-    palette = QPalette()
-    palette.setColor(QPalette.Window, QColor(245, 245, 245))
-    palette.setColor(QPalette.WindowText, QColor(33, 33, 33))
-    palette.setColor(QPalette.Base, QColor(255, 255, 255))
-    palette.setColor(QPalette.AlternateBase, QColor(240, 240, 240))
-    palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
-    palette.setColor(QPalette.ToolTipText, QColor(33, 33, 33))
-    palette.setColor(QPalette.Text, QColor(33, 33, 33))
-    palette.setColor(QPalette.Button, QColor(240, 240, 240))
-    palette.setColor(QPalette.ButtonText, QColor(33, 33, 33))
-    palette.setColor(QPalette.BrightText, QColor(255, 255, 255))
-    palette.setColor(QPalette.Highlight, QColor(33, 150, 243))  # Material Blue
-    palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    app.setPalette(palette)
-    
-    # Create splash screen for modern look
-    splash_pix = QPixmap(400, 300)
-    splash_pix.fill(QColor(33, 150, 243))  # Material Blue
-    
-    # Draw splash screen content
-    painter = QPainter(splash_pix)
-    painter.setPen(QColor(255, 255, 255))
-    painter.setFont(QFont("Segoe UI", 24, QFont.Bold))
-    painter.drawText(QRect(0, 100, 400, 50), Qt.AlignCenter, "SharePoint List Editor")
-    painter.setFont(QFont("Segoe UI", 12))
-    painter.drawText(QRect(0, 160, 400, 30), Qt.AlignCenter, "Material Design Edition")
-    painter.end()
-    
-    # Show splash screen
-    splash = QSplashScreen(splash_pix)
-    splash.show()
-    
-    # Process events to display splash
-    app.processEvents()
-    
-    # Create and show main window
-    window = SharepointTableApp()
-    
-    # Close splash after 1.5 seconds
-    QTimer.singleShot(1500, splash.close)
-    QTimer.singleShot(1500, window.show)
-    
-    sys.exit(app.exec_())
+        # Clear
