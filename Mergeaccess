@@ -1,208 +1,533 @@
-import getpass
-import os
-import shutil
-import sqlite3
 import sys
+import pandas as pd
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
+                           QWidget, QPushButton, QLabel, QTextEdit, QFileDialog,
+                           QDialog, QFormLayout, QComboBox, QDialogButtonBox,
+                           QScrollArea, QFrame, QGraphicsDropShadowEffect)
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtGui import QFont, QPalette, QColor, QPainter, QPen
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap, QPainter, QBrush
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                             QPushButton, QLabel, QLineEdit, QGridLayout, QFrame, QProgressBar, QMessageBox,
-                             QScrollArea, QSizePolicy, QTabWidget, QStackedWidget)
 
-# Import the AccessControlDialog from the other file
-from sharepoint_access_control import AccessControlDialog  # Adjust import path as needed
+class MaterialButton(QPushButton):
+    """Material Design styled button with hover and press animations"""
+    
+    def __init__(self, text, color="#2196F3", hover_color="#1976D2", text_color="white"):
+        super().__init__(text)
+        self.base_color = color
+        self.hover_color = hover_color
+        self.text_color = text_color
+        self.setup_style()
+        self.add_shadow()
+        
+    def setup_style(self):
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.base_color};
+                color: {self.text_color};
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.hover_color};
+            }}
+            QPushButton:pressed {{
+                background-color: {self.hover_color};
+                padding: 13px 23px 11px 25px;
+            }}
+            QPushButton:disabled {{
+                background-color: #BDBDBD;
+                color: #FFFFFF;
+            }}
+        """)
+        
+    def add_shadow(self):
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 40))
+        self.setGraphicsEffect(shadow)
 
-class MainWindow(QMainWindow):
+
+class MaterialCard(QFrame):
+    """Material Design card widget"""
+    
     def __init__(self):
         super().__init__()
-        self.all_tiles = []
-        self.username = getpass.getuser()
-        self.db = Database("launcher.db")
-        self.setWindowTitle("Application Launcher")
-        self.setMinimumSize(1200, 720)
+        self.setFrameStyle(QFrame.Shape.NoFrame)
+        self.setStyleSheet("""
+            QFrame {
+                background-color: white;
+                border-radius: 12px;
+                margin: 8px;
+            }
+        """)
+        self.add_shadow()
         
-        # Create stacked widget to switch between applications and access control
-        self.stacked_widget = QStackedWidget()
+    def add_shadow(self):
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        self.setGraphicsEffect(shadow)
+
+
+class MissingElementsDialog(QDialog):
+    def __init__(self, missing_elements, dropdown_options, parent=None):
+        super().__init__(parent)
+        self.missing_elements = missing_elements
+        self.dropdown_options = dropdown_options
+        self.element_mappings = {}
+        self.setup_ui()
         
-        # Create main content widget
-        main_content_widget = QWidget()
-        main_layout = QHBoxLayout(main_content_widget)
+    def setup_ui(self):
+        self.setWindowTitle("Map Missing Elements")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
+        
+        # Apply material theme to dialog
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #FAFAFA;
+            }
+            QLabel {
+                color: #212121;
+                font-size: 14px;
+            }
+            QComboBox {
+                background-color: white;
+                border: 2px solid #E0E0E0;
+                border-radius: 8px;
+                padding: 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }
+            QComboBox:focus {
+                border-color: #2196F3;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #757575;
+                margin-right: 10px;
+            }
+        """)
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(24)
+        layout.setContentsMargins(32, 32, 32, 32)
+        
+        # Title
+        title_label = QLabel("Map Missing Elements")
+        title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Normal))
+        title_label.setStyleSheet("color: #212121; margin-bottom: 8px;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+        
+        subtitle_label = QLabel("Select the corresponding values for each missing element")
+        subtitle_label.setFont(QFont("Segoe UI", 14))
+        subtitle_label.setStyleSheet("color: #757575; margin-bottom: 24px;")
+        subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle_label)
+        
+        # Card for form content
+        card = MaterialCard()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        
+        # Form layout
+        form_widget = QWidget()
+        form_layout = QFormLayout(form_widget)
+        form_layout.setSpacing(16)
+        
+        # Create dropdown for each missing element
+        self.dropdowns = {}
+        for element in self.missing_elements:
+            # Element label
+            element_label = QLabel(f"{element.title()}:")
+            element_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Medium))
+            element_label.setStyleSheet("color: #424242; margin-bottom: 4px;")
+            
+            # Dropdown
+            combo = QComboBox()
+            combo.addItems(self.dropdown_options)
+            combo.setCurrentIndex(0)
+            self.dropdowns[element] = combo
+            
+            form_layout.addRow(element_label, combo)
+            
+        card_layout.addWidget(form_widget)
+        layout.addWidget(card)
+        
+        # Buttons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(16)
+        
+        cancel_btn = MaterialButton("Cancel", color="#757575", hover_color="#616161")
+        cancel_btn.clicked.connect(self.reject)
+        
+        ok_btn = MaterialButton("Apply Mapping", color="#4CAF50", hover_color="#388E3C")
+        ok_btn.clicked.connect(self.accept)
+        
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(cancel_btn)
+        buttons_layout.addWidget(ok_btn)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+    
+    def get_mappings(self):
+        """Return the element-value mappings"""
+        mappings = {}
+        for element, combo in self.dropdowns.items():
+            mappings[element] = combo.currentText()
+        return mappings
+
+
+class ToolMainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.selected_path = ""
+        self.main_df = pd.DataFrame()
+        self.setup_ui()
+        self.apply_material_theme()
+        
+    def setup_ui(self):
+        self.setWindowTitle("Data Processing Tool")
+        self.setGeometry(100, 100, 1000, 700)
+        self.setMinimumSize(800, 600)
+        
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # Main layout
+        main_layout = QVBoxLayout(central_widget)
         main_layout.setSpacing(0)
         main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Sidebar
-        sidebar = QWidget()
-        sidebar.setFixedWidth(250)
-        sidebar.setStyleSheet("""
+        
+        # Header section
+        self.create_header(main_layout)
+        
+        # Content area
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(24)
+        
+        # Path selection section
+        self.create_path_section(content_layout)
+        
+        # Buttons section
+        self.create_buttons_section(content_layout)
+        
+        # Console section
+        self.create_console_section(content_layout)
+        
+        main_layout.addWidget(content_widget)
+        
+    def apply_material_theme(self):
+        """Apply Material Design color scheme"""
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #FAFAFA;
+            }
             QWidget {
-                background-color: #2c3e50;
-                color: white;
+                background-color: #FAFAFA;
+                color: #212121;
+                font-family: 'Segoe UI', sans-serif;
             }
-            QPushButton {
-                background-color: #6c5ce7;
-                color: white;
+        """)
+        
+    def create_header(self, parent_layout):
+        """Create Material Design header"""
+        header_frame = QFrame()
+        header_frame.setFixedHeight(80)
+        header_frame.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #2196F3, stop:1 #21CBF3);
                 border: none;
-                padding: 10px;
-                margin: 10px 5px;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #5b4bc7;
-            }
-            QPushButton:checked {
-                background-color: #4a3a9c;
             }
         """)
-        sidebar_layout = QVBoxLayout(sidebar)
-
-        # Profile picture setup (existing code)
-        self.setup_profile_picture(sidebar_layout)
-
-        # Sidebar buttons
-        self.apps_btn = QPushButton("Applications")
-        self.access_control_btn = QPushButton("Access Control")
         
-        self.apps_btn.setCheckable(True)
-        self.access_control_btn.setCheckable(True)
+        # Add shadow to header
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(8)
+        shadow.setXOffset(0)
+        shadow.setYOffset(2)
+        shadow.setColor(QColor(0, 0, 0, 30))
+        header_frame.setGraphicsEffect(shadow)
         
-        sidebar_layout.addWidget(self.apps_btn)
-        sidebar_layout.addWidget(self.access_control_btn)
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(32, 0, 32, 0)
         
-        sidebar_layout.addStretch()
-        exit_button = QPushButton("EXIT")
-        exit_button.clicked.connect(self.close)
-        sidebar_layout.addWidget(exit_button)
-
-        # Applications Content
-        applications_content = QWidget()
-        applications_layout = QVBoxLayout(applications_content)
-        applications_layout.setContentsMargins(30, 30, 30, 30)
-        applications_layout.setSpacing(20)
-
-        # Logo
-        logo_label = QLabel()
-        logo_pixmap = QPixmap("C:\\Users\\madhu\\Desktop\\new_logo.png")
-        logo_label.setPixmap(logo_pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio,
-                                                Qt.TransformationMode.SmoothTransformation))
-        applications_layout.addWidget(logo_label, alignment=Qt.AlignmentFlag.AlignRight)
-
-        # Title and search section
-        header_widget = QWidget()
-        header_layout = QVBoxLayout(header_widget)
-        header_layout.setSpacing(15)
-
-        app_title = QLabel("Applications")
-        app_title.setStyleSheet("""
-            font-size: 28px;
-            font-weight: bold;
-            color: #2c3e50;
-        """)
-        header_layout.addWidget(app_title)
-
-        self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("🔍 Search applications...")
-        self.search_bar.textChanged.connect(self.filter_applications)
-        self.search_bar.setStyleSheet("""
-            QLineEdit {
-                border: 2px solid #e0e0e0;
-                border-radius: 25px;
-                padding: 12px 20px;
+        title_label = QLabel("Data Processing Tool")
+        title_label.setFont(QFont("Segoe UI", 28, QFont.Weight.Light))
+        title_label.setStyleSheet("QLabel { color: white; }")
+        
+        subtitle_label = QLabel("Advanced data analysis and processing")
+        subtitle_label.setFont(QFont("Segoe UI", 14))
+        subtitle_label.setStyleSheet("QLabel { color: rgba(255, 255, 255, 0.8); }")
+        
+        title_layout = QVBoxLayout()
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(subtitle_label)
+        title_layout.setSpacing(4)
+        
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        
+        parent_layout.addWidget(header_frame)
+        
+    def create_path_section(self, parent_layout):
+        """Create Material Design path selection section"""
+        # Section title
+        section_title = QLabel("Folder Selection")
+        section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
+        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        parent_layout.addWidget(section_title)
+        
+        # Path card
+        path_card = MaterialCard()
+        path_layout = QHBoxLayout(path_card)
+        path_layout.setContentsMargins(24, 20, 24, 20)
+        path_layout.setSpacing(16)
+        
+        # Browse button
+        self.browse_button = MaterialButton("Browse Folder", color="#FF9800", hover_color="#F57C00")
+        self.browse_button.clicked.connect(self.browse_folder)
+        self.browse_button.setFixedWidth(160)
+        
+        # Path label
+        self.path_label = QLabel("No folder selected")
+        self.path_label.setStyleSheet("""
+            QLabel {
+                background-color: #F5F5F5;
+                border: 2px solid #E0E0E0;
+                border-radius: 8px;
+                padding: 12px 16px;
                 font-size: 14px;
-                background-color: white;
-            }
-            QLineEdit:focus {
-                border-color: #4a90e2;
-                outline: none;
+                color: #757575;
             }
         """)
-        header_layout.addWidget(self.search_bar)
-        applications_layout.addWidget(header_widget)
-
-        # Custom Tab Widget
-        self.tab_widget = CustomTabWidget()
-        applications_layout.addWidget(self.tab_widget)
-
-        # Prod Scroll Area
-        self.prod_scroll = QScrollArea()
-        self.prod_scroll.setWidgetResizable(True)
-        self.prod_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.path_label.setMinimumHeight(20)
         
-        self.prod_widget = QWidget()
-        self.prod_layout = QGridLayout(self.prod_widget)
-        self.prod_layout.setSpacing(20)
-        self.prod_layout.setContentsMargins(0, 0, 20, 0)
-        self.prod_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        path_layout.addWidget(self.browse_button)
+        path_layout.addWidget(self.path_label, 1)
+        
+        parent_layout.addWidget(path_card)
+        
+    def create_buttons_section(self, parent_layout):
+        """Create Material Design action buttons"""
+        section_title = QLabel("Actions")
+        section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
+        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        parent_layout.addWidget(section_title)
+        
+        buttons_card = MaterialCard()
+        buttons_layout = QHBoxLayout(buttons_card)
+        buttons_layout.setContentsMargins(24, 20, 24, 20)
+        buttons_layout.setSpacing(16)
+        
+        button_configs = [
+            ("Pre-load", "#9C27B0", "#7B1FA2"),
+            ("Access Logic", "#2196F3", "#1976D2"),
+            ("Control Check", "#FF5722", "#D84315"),
+            ("Response", "#4CAF50", "#388E3C"),
+            ("Scorecard", "#607D8B", "#455A64")
+        ]
+        
+        self.action_buttons = {}
+        
+        for name, color, hover_color in button_configs:
+            button = MaterialButton(name, color=color, hover_color=hover_color)
+            button.setMinimumHeight(48)
+            
+            # Connect Access Logic button to our handler
+            if name == "Access Logic":
+                button.clicked.connect(self.access_logic_clicked)
+            else:
+                button.clicked.connect(lambda checked, btn_name=name: self.log_message(f"{btn_name} button clicked"))
+                
+            self.action_buttons[name] = button
+            buttons_layout.addWidget(button)
+            
+        parent_layout.addWidget(buttons_card)
+        
+    def create_console_section(self, parent_layout):
+        """Create Material Design console section"""
+        section_title = QLabel("Console Output")
+        section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
+        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        parent_layout.addWidget(section_title)
+        
+        console_card = MaterialCard()
+        console_layout = QVBoxLayout(console_card)
+        console_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.console = QTextEdit()
+        self.console.setStyleSheet("""
+            QTextEdit {
+                background-color: #263238;
+                color: #4CAF50;
+                font-family: 'Consolas', 'Monaco', monospace;
+                font-size: 12px;
+                border: none;
+                border-radius: 12px;
+                padding: 16px;
+                line-height: 1.4;
+            }
+            QScrollBar:vertical {
+                background-color: #37474F;
+                width: 12px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #546E7A;
+                border-radius: 6px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #607D8B;
+            }
+        """)
+        self.console.setReadOnly(True)
+        self.console.setMinimumHeight(200)
+        
+        console_layout.addWidget(self.console)
+        parent_layout.addWidget(console_card)
+        
+        # Log initial message
+        self.log_message("🚀 Tool initialized. Ready for use.", "SUCCESS")
+        
+    def browse_folder(self):
+        """Handle folder browsing"""
+        folder_path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Folder",
+            "",
+            QFileDialog.Option.ShowDirsOnly
+        )
+        
+        if folder_path:
+            self.selected_path = folder_path
+            self.path_label.setText(folder_path)
+            self.path_label.setStyleSheet("""
+                QLabel {
+                    background-color: #E8F5E8;
+                    border: 2px solid #4CAF50;
+                    border-radius: 8px;
+                    padding: 12px 16px;
+                    font-size: 14px;
+                    color: #2E7D32;
+                    font-weight: 500;
+                }
+            """)
+            self.log_message(f"📁 Folder selected: {folder_path}", "SUCCESS")
+        
+    def access_logic_clicked(self):
+        """Handle Access Logic button click"""
+        self.log_message("🔍 Access Logic button clicked", "INFO")
+        
+        if not self.selected_path:
+            self.log_message("❌ ERROR: No folder selected. Please select a folder first.", "ERROR")
+            return
+            
+        # Simulate checking for missing elements
+        self.log_message("⏳ Analyzing folder contents for missing elements...", "INFO")
+        
+        # Example: simulate missing elements
+        missing_elements = ["bhopal", "indore", "nagpur"]
+        dropdown_options = ["MP", "MH", "KA", "RJ"]
+        
+        self.log_message(f"⚠️ Found missing elements: {', '.join(missing_elements)}", "WARNING")
+        
+        # Show dialog for mapping missing elements
+        dialog = MissingElementsDialog(missing_elements, dropdown_options, self)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            mappings = dialog.get_mappings()
+            self.log_message("✅ Element mappings received:", "SUCCESS")
+            
+            # Process the mappings and add to dataframe
+            new_combinations = []
+            for element, value in mappings.items():
+                combination = f"{element}-{value}"
+                new_combinations.append(combination)
+                self.log_message(f"   • {element} → {value} (Combined: {combination})", "INFO")
+            
+            # Add combinations to dataframe
+            self.add_combinations_to_df(new_combinations)
+            
+        else:
+            self.log_message("❌ Element mapping cancelled by user", "WARNING")
+    
+    def add_combinations_to_df(self, combinations):
+        """Add combinations to the main dataframe"""
+        self.log_message("💾 Adding combinations to dataframe:", "INFO")
+        
+        # Create a dataframe with the combinations
+        new_data = pd.DataFrame({"combinations": combinations})
+        
+        if self.main_df.empty:
+            self.main_df = new_data
+        else:
+            self.main_df = pd.concat([self.main_df, new_data], ignore_index=True)
+        
+        self.log_message(f"📊 Dataframe updated. Total rows: {len(self.main_df)}", "SUCCESS")
+        self.log_message("📋 Current combinations in dataframe:", "INFO")
+        for combo in combinations:
+            self.log_message(f"   • {combo}", "SUCCESS")
+        
+    def log_message(self, message, level="INFO"):
+        """Add styled message to console"""
+        colors = {
+            "INFO": "#4CAF50",
+            "SUCCESS": "#8BC34A", 
+            "WARNING": "#FF9800",
+            "ERROR": "#F44336"
+        }
+        
+        color = colors.get(level, "#4CAF50")
+        timestamp = pd.Timestamp.now().strftime("%H:%M:%S")
+        
+        self.console.append(f'<span style="color: #90A4AE;">[{timestamp}]</span> '
+                          f'<span style="color: {color};">{message}</span>')
+        
+        # Auto-scroll to bottom
+        self.console.verticalScrollBar().setValue(
+            self.console.verticalScrollBar().maximum()
+        )
 
-        self.prod_scroll.setWidget(self.prod_widget)
-        self.tab_widget.addTab(self.prod_scroll, "Applications")
 
-        # Create Access Control Widget
-        self.access_control_widget = AccessControlDialog()
+def main():
+    app = QApplication(sys.argv)
+    
+    # Set application style
+    app.setStyle('Fusion')
+    
+    # Set application-wide font
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    
+    window = ToolMainWindow()
+    window.show()
+    
+    sys.exit(app.exec())
 
-        # Add widgets to stacked widget
-        self.stacked_widget.addWidget(applications_content)
-        self.stacked_widget.addWidget(self.access_control_widget)
 
-        # Main layout setup
-        main_layout.addWidget(sidebar)
-        main_layout.addWidget(self.stacked_widget, 1)
-
-        # Set central widget
-        self.setCentralWidget(main_content_widget)
-
-        # Connect buttons to switch views
-        self.apps_btn.clicked.connect(self.show_applications)
-        self.access_control_btn.clicked.connect(self.show_access_control)
-
-        # Initial setup
-        self.load_applications()
-        self.show_applications()
-
-    def setup_profile_picture(self, sidebar_layout):
-        # Existing profile picture setup code from previous implementation
-        self.profile_pic = QLabel()
-        profile_pixmap = QPixmap("D:/Download/download.jpg")
-        scaled_pixmap = profile_pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                              Qt.TransformationMode.SmoothTransformation)
-
-        # Create a circular mask
-        mask = QPixmap(150, 150)
-        mask.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(mask)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QBrush(Qt.GlobalColor.white))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(0, 0, 150, 150)
-        painter.end()
-
-        # Apply the mask to the scaled pixmap
-        rounded_pixmap = QPixmap(150, 150)
-        rounded_pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(rounded_pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.drawPixmap(0, 0, mask)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-        painter.drawPixmap(0, 0, scaled_pixmap)
-        painter.end()
-
-        self.profile_pic.setPixmap(rounded_pixmap)
-        self.profile_pic.setFixedSize(150, 150)
-        sidebar_layout.addWidget(self.profile_pic, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        sidebar_layout.addWidget(QLabel(f"SID: {self.username}"))
-        sidebar_layout.addWidget(QLabel("Name: John Doe"))  # Replace with actual user data
-        sidebar_layout.addWidget(QLabel("LOB: CORPORATE"))  # Replace with actual user data
-
-    def show_applications(self):
-        self.stacked_widget.setCurrentIndex(0)
-        self.apps_btn.setChecked(True)
-        self.access_control_btn.setChecked(False)
-
-    def show_access_control(self):
-        self.stacked_widget.setCurrentIndex(1)
-        self.apps_btn.setChecked(False)
-        self.access_control_btn.setChecked(True)
-
-    # Existing methods like load_applications, filter_applications, etc. remain the same
-    # ... (keep all other existing methods from the original MainWindow class)
+if __name__ == "__main__":
+    main()
