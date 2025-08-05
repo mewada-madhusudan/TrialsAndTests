@@ -44,6 +44,7 @@ class PreloadThread(QThread):
     log_signal = pyqtSignal(str, str)  # message, level
     progress_signal = pyqtSignal(str, bool)  # message, start_animation
     finished_signal = pyqtSignal(bool, str)  # success, message
+    dataframe_loaded = pyqtSignal(str, object)  # filename, dataframe
     
     def __init__(self, excel_path, parent_dir):
         super().__init__()
@@ -117,6 +118,9 @@ class PreloadThread(QThread):
                         # Stop progress animation
                         self.progress_signal.emit("", False)
                         self.log_signal.emit(f"✅ Successfully read {filename} ({len(data_df)} rows)", "SUCCESS")
+                        
+                        # Emit signal to save dataframe to appropriate variable
+                        self.dataframe_loaded.emit(filename, data_df)
                         
                         # Column validation with progress
                         if expected_columns and not data_df.empty:
@@ -361,6 +365,21 @@ class ToolMainWindow(QMainWindow):
         super().__init__()
         self.selected_path = ""
         self.main_df = pd.DataFrame()
+        
+        # Six dataframe variables for the six files
+        self.df_file1 = pd.DataFrame()
+        self.df_file2 = pd.DataFrame()
+        self.df_file3 = pd.DataFrame()
+        self.df_file4 = pd.DataFrame()
+        self.df_file5 = pd.DataFrame()
+        self.df_file6 = pd.DataFrame()
+        
+        # Dictionary to map filenames to dataframe variables
+        self.filename_to_df_mapping = {
+            # This will be populated dynamically based on your file naming convention
+            # Example mappings - you can customize these based on your actual filenames
+        }
+        
         self.preload_thread = None
         self.progress_thread = None
         self.current_progress_line = None
@@ -629,7 +648,83 @@ class ToolMainWindow(QMainWindow):
         self.preload_thread.log_signal.connect(self.log_message)
         self.preload_thread.progress_signal.connect(self.show_progress)
         self.preload_thread.finished_signal.connect(self.preload_finished)
+        self.preload_thread.dataframe_loaded.connect(self.store_dataframe)
         self.preload_thread.start()
+    
+    def store_dataframe(self, filename, dataframe):
+        """Store dataframe in appropriate variable based on filename"""
+        # Get base filename without extension
+        base_filename = os.path.splitext(filename)[0].lower()
+        
+        # Define your mapping logic here based on your actual filenames
+        # You can customize this mapping based on your specific file naming convention
+        if 'file1' in base_filename or 'data1' in base_filename or 'first' in base_filename:
+            self.df_file1 = dataframe
+            df_name = "df_file1"
+        elif 'file2' in base_filename or 'data2' in base_filename or 'second' in base_filename:
+            self.df_file2 = dataframe
+            df_name = "df_file2"
+        elif 'file3' in base_filename or 'data3' in base_filename or 'third' in base_filename:
+            self.df_file3 = dataframe
+            df_name = "df_file3"
+        elif 'file4' in base_filename or 'data4' in base_filename or 'fourth' in base_filename:
+            self.df_file4 = dataframe
+            df_name = "df_file4"
+        elif 'file5' in base_filename or 'data5' in base_filename or 'fifth' in base_filename:
+            self.df_file5 = dataframe
+            df_name = "df_file5"
+        elif 'file6' in base_filename or 'data6' in base_filename or 'sixth' in base_filename:
+            self.df_file6 = dataframe
+            df_name = "df_file6"
+        else:
+            # If filename doesn't match any pattern, assign to first available slot
+            if self.df_file1.empty:
+                self.df_file1 = dataframe
+                df_name = "df_file1"
+            elif self.df_file2.empty:
+                self.df_file2 = dataframe
+                df_name = "df_file2"
+            elif self.df_file3.empty:
+                self.df_file3 = dataframe
+                df_name = "df_file3"
+            elif self.df_file4.empty:
+                self.df_file4 = dataframe
+                df_name = "df_file4"
+            elif self.df_file5.empty:
+                self.df_file5 = dataframe
+                df_name = "df_file5"
+            elif self.df_file6.empty:
+                self.df_file6 = dataframe
+                df_name = "df_file6"
+            else:
+                # All slots filled, log warning
+                self.log_message(f"⚠️ All dataframe slots filled. Could not store {filename}", "WARNING")
+                return
+        
+        self.log_message(f"💾 Stored {filename} data in {df_name} ({len(dataframe)} rows, {len(dataframe.columns)} columns)", "SUCCESS")
+        
+        # Update filename to dataframe mapping for future reference
+        self.filename_to_df_mapping[filename] = df_name
+    
+    def get_dataframe_summary(self):
+        """Get summary of all loaded dataframes"""
+        summary_info = []
+        dataframes = [
+            ("df_file1", self.df_file1),
+            ("df_file2", self.df_file2),
+            ("df_file3", self.df_file3),
+            ("df_file4", self.df_file4),
+            ("df_file5", self.df_file5),
+            ("df_file6", self.df_file6)
+        ]
+        
+        for df_name, df in dataframes:
+            if not df.empty:
+                summary_info.append(f"{df_name}: {len(df)} rows, {len(df.columns)} cols")
+            else:
+                summary_info.append(f"{df_name}: Empty")
+        
+        return summary_info
         
     def show_progress(self, message, start_animation):
         """Show progress with animated dots"""
@@ -706,6 +801,18 @@ class ToolMainWindow(QMainWindow):
             
         if success:
             self.log_message(f"✅ {message}", "SUCCESS")
+            
+            # Show summary of loaded dataframes
+            summary = self.get_dataframe_summary()
+            self.log_message("📊 Dataframe Summary:", "INFO")
+            for info in summary:
+                self.log_message(f"   • {info}", "INFO")
+                
+            # Show filename to dataframe mapping
+            if self.filename_to_df_mapping:
+                self.log_message("🗂️ File Mapping:", "INFO")
+                for filename, df_name in self.filename_to_df_mapping.items():
+                    self.log_message(f"   • {filename} → {df_name}", "INFO")
         else:
             self.log_message(f"❌ {message}", "ERROR")
             
