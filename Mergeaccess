@@ -1,17 +1,169 @@
 import sys
+import os
 import pandas as pd
+import time
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                            QWidget, QPushButton, QLabel, QTextEdit, QFileDialog,
                            QDialog, QFormLayout, QComboBox, QDialogButtonBox,
                            QScrollArea, QFrame, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QPalette, QColor, QPainter, QPen
 
 
-class MaterialButton(QPushButton):
-    """Material Design styled button with hover and press animations"""
+class ProgressThread(QThread):
+    """Thread for showing progress dots during calculations"""
+    progress_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal()
     
-    def __init__(self, text, color="#2196F3", hover_color="#1976D2", text_color="white"):
+    def __init__(self, message, duration=3):
+        super().__init__()
+        self.message = message
+        self.duration = duration
+        self.running = True
+        
+    def run(self):
+        dots = ""
+        start_time = time.time()
+        
+        while self.running and (time.time() - start_time) < self.duration:
+            for i in range(4):  # 0 to 3 dots
+                if not self.running:
+                    break
+                dots = "." * i
+                self.progress_signal.emit(f"{self.message}{dots}")
+                self.msleep(500)  # Wait 500ms
+                
+        self.finished_signal.emit()
+    
+    def stop(self):
+        self.running = False
+
+
+class PreloadThread(QThread):
+    """Thread for preloading data without blocking UI"""
+    log_signal = pyqtSignal(str, str)  # message, level
+    progress_signal = pyqtSignal(str, bool)  # message, start_animation
+    finished_signal = pyqtSignal(bool, str)  # success, message
+    
+    def __init__(self, excel_path, parent_dir):
+        super().__init__()
+        self.excel_path = excel_path
+        self.parent_dir = parent_dir
+        self.running = True
+        
+    def run(self):
+        try:
+            # Start progress animation for Excel reading
+            self.progress_signal.emit("📖 Reading mapping Excel file", True)
+            
+            # Read the Excel file (this can take time for large files)
+            xl_file = pd.ExcelFile(self.excel_path)
+            sheet_names = xl_file.sheet_names
+            
+            # Stop progress animation and log completion
+            self.progress_signal.emit("", False)
+            self.log_signal.emit(f"📋 Found sheets: {', '.join(sheet_names)}", "INFO")
+            
+            # Start progress for reading sheet data
+            self.progress_signal.emit("📊 Loading mapping data from sheet", True)
+            
+            # Read the mapping data (this can also take time)
+            mapping_df = pd.read_excel(self.excel_path, sheet_name=0)
+            
+            # Stop progress and log completion
+            self.progress_signal.emit("", False)
+            self.log_signal.emit(f"📊 Loaded {len(mapping_df)} rows from mapping sheet", "SUCCESS")
+            
+            # Process each row in mapping
+            for index, row in mapping_df.iterrows():
+                if not self.running:
+                    break
+                    
+                filename = str(row.get('filename', 'unknown'))
+                filepath = str(row.get('path', ''))
+                expected_columns = str(row.get('expected_columns', ''))
+                
+                # Construct full path
+                if filepath:
+                    full_path = os.path.join(self.parent_dir, filepath, filename)
+                else:
+                    full_path = os.path.join(self.parent_dir, filename)
+                
+                self.log_signal.emit(f"🔍 Looking for {filename} in {filepath if filepath else 'root'}......", "INFO")
+                
+                if os.path.exists(full_path):
+                    self.log_signal.emit(f"✅ Found: {filename}", "SUCCESS")
+                    
+                    # Start progress animation for file processing
+                    self.progress_signal.emit(f"⚙️ Reading {filename}", True)
+                    
+                    # Simulate reading the data file (this is where pd.read_excel/csv would go)
+                    try:
+                        # Determine file type and read accordingly
+                        file_ext = os.path.splitext(filename)[1].lower()
+                        
+                        if file_ext in ['.xlsx', '.xls']:
+                            # This is where the actual pd.read_excel() call would happen
+                            # The progress animation will show while this executes
+                            data_df = pd.read_excel(full_path)
+                        elif file_ext == '.csv':
+                            # This is where pd.read_csv() would happen
+                            data_df = pd.read_csv(full_path)
+                        else:
+                            # For other file types, simulate reading
+                            self.msleep(2000)  # Simulate time for reading
+                            data_df = pd.DataFrame()  # Empty dataframe for demo
+                        
+                        # Stop progress animation
+                        self.progress_signal.emit("", False)
+                        self.log_signal.emit(f"✅ Successfully read {filename} ({len(data_df)} rows)", "SUCCESS")
+                        
+                        # Column validation with progress
+                        if expected_columns and not data_df.empty:
+                            self.progress_signal.emit(f"🔍 Validating columns for {filename}", True)
+                            
+                            expected_cols = [col.strip() for col in expected_columns.split(',')]
+                            actual_cols = data_df.columns.tolist()
+                            
+                            # Simulate validation time
+                            self.msleep(1000)
+                            
+                            self.progress_signal.emit("", False)
+                            
+                            missing_cols = set(expected_cols) - set(actual_cols)
+                            if missing_cols:
+                                self.log_signal.emit(f"⚠️ Missing columns in {filename}: {', '.join(missing_cols)}", "WARNING")
+                            else:
+                                self.log_signal.emit(f"✅ All expected columns found in {filename}", "SUCCESS")
+                                
+                    except Exception as file_error:
+                        self.progress_signal.emit("", False)
+                        self.log_signal.emit(f"❌ Error reading {filename}: {str(file_error)}", "ERROR")
+                        
+                else:
+                    self.log_signal.emit(f"❌ File not found: {full_path}", "ERROR")
+                
+                # Small delay between files
+                self.msleep(300)
+                
+                # Check if we should continue
+                if not self.running:
+                    break
+            
+            self.finished_signal.emit(True, "Preload completed successfully")
+            
+        except Exception as e:
+            self.progress_signal.emit("", False)  # Stop any running animation
+            self.finished_signal.emit(False, f"Error during preload: {str(e)}")
+    
+    def stop(self):
+        self.running = False
+
+
+class MaterialButton(QPushButton):
+    """Material Design styled button with custom color theme"""
+    
+    def __init__(self, text, color="#4A90E2", hover_color="#357ABD", text_color="white"):
         super().__init__(text)
         self.base_color = color
         self.hover_color = hover_color
@@ -40,7 +192,7 @@ class MaterialButton(QPushButton):
                 padding: 13px 23px 11px 25px;
             }}
             QPushButton:disabled {{
-                background-color: #BDBDBD;
+                background-color: #9E9E9E;
                 color: #FFFFFF;
             }}
         """)
@@ -55,26 +207,27 @@ class MaterialButton(QPushButton):
 
 
 class MaterialCard(QFrame):
-    """Material Design card widget"""
+    """Material Design card widget with custom theme"""
     
     def __init__(self):
         super().__init__()
         self.setFrameStyle(QFrame.Shape.NoFrame)
         self.setStyleSheet("""
             QFrame {
-                background-color: white;
+                background-color: #FEFEFE;
                 border-radius: 12px;
                 margin: 8px;
+                border: 1px solid #E5E5E5;
             }
         """)
         self.add_shadow()
         
     def add_shadow(self):
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
+        shadow.setBlurRadius(15)
         shadow.setXOffset(0)
-        shadow.setYOffset(2)
-        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setYOffset(3)
+        shadow.setColor(QColor(0, 0, 0, 12))
         self.setGraphicsEffect(shadow)
 
 
@@ -92,25 +245,26 @@ class MissingElementsDialog(QDialog):
         self.setMinimumWidth(500)
         self.setMinimumHeight(400)
         
-        # Apply material theme to dialog
+        # Apply custom material theme to dialog
         self.setStyleSheet("""
             QDialog {
-                background-color: #FAFAFA;
+                background-color: #F8F9FA;
             }
             QLabel {
-                color: #212121;
+                color: #3E2723;
                 font-size: 14px;
             }
             QComboBox {
-                background-color: white;
-                border: 2px solid #E0E0E0;
+                background-color: #FEFEFE;
+                border: 2px solid #D4B896;
                 border-radius: 8px;
                 padding: 12px;
                 font-size: 14px;
                 min-height: 20px;
+                color: #3E2723;
             }
             QComboBox:focus {
-                border-color: #2196F3;
+                border-color: #4A90E2;
             }
             QComboBox::drop-down {
                 border: none;
@@ -120,8 +274,14 @@ class MissingElementsDialog(QDialog):
                 image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
-                border-top: 5px solid #757575;
+                border-top: 5px solid #8D6E63;
                 margin-right: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #FEFEFE;
+                border: 1px solid #D4B896;
+                selection-background-color: #E3F2FD;
+                color: #3E2723;
             }
         """)
         
@@ -132,13 +292,13 @@ class MissingElementsDialog(QDialog):
         # Title
         title_label = QLabel("Map Missing Elements")
         title_label.setFont(QFont("Segoe UI", 24, QFont.Weight.Normal))
-        title_label.setStyleSheet("color: #212121; margin-bottom: 8px;")
+        title_label.setStyleSheet("color: #3E2723; margin-bottom: 8px;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)
         
         subtitle_label = QLabel("Select the corresponding values for each missing element")
         subtitle_label.setFont(QFont("Segoe UI", 14))
-        subtitle_label.setStyleSheet("color: #757575; margin-bottom: 24px;")
+        subtitle_label.setStyleSheet("color: #8D6E63; margin-bottom: 24px;")
         subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle_label)
         
@@ -158,7 +318,7 @@ class MissingElementsDialog(QDialog):
             # Element label
             element_label = QLabel(f"{element.title()}:")
             element_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Medium))
-            element_label.setStyleSheet("color: #424242; margin-bottom: 4px;")
+            element_label.setStyleSheet("color: #5D4037; margin-bottom: 4px;")
             
             # Dropdown
             combo = QComboBox()
@@ -175,10 +335,10 @@ class MissingElementsDialog(QDialog):
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(16)
         
-        cancel_btn = MaterialButton("Cancel", color="#757575", hover_color="#616161")
+        cancel_btn = MaterialButton("Cancel", color="#9E9E9E", hover_color="#757575")
         cancel_btn.clicked.connect(self.reject)
         
-        ok_btn = MaterialButton("Apply Mapping", color="#4CAF50", hover_color="#388E3C")
+        ok_btn = MaterialButton("Apply Mapping", color="#8D6E63", hover_color="#6D4C41")
         ok_btn.clicked.connect(self.accept)
         
         buttons_layout.addStretch()
@@ -201,8 +361,11 @@ class ToolMainWindow(QMainWindow):
         super().__init__()
         self.selected_path = ""
         self.main_df = pd.DataFrame()
+        self.preload_thread = None
+        self.progress_thread = None
+        self.current_progress_line = None
         self.setup_ui()
-        self.apply_material_theme()
+        self.apply_custom_theme()
         
     def setup_ui(self):
         self.setWindowTitle("Data Processing Tool")
@@ -238,37 +401,37 @@ class ToolMainWindow(QMainWindow):
         
         main_layout.addWidget(content_widget)
         
-    def apply_material_theme(self):
-        """Apply Material Design color scheme"""
+    def apply_custom_theme(self):
+        """Apply custom color scheme with sky blue, yellowish brown, brown, grey"""
         self.setStyleSheet("""
             QMainWindow {
-                background-color: #FAFAFA;
+                background-color: #F8F9FA;
             }
             QWidget {
-                background-color: #FAFAFA;
-                color: #212121;
+                background-color: #F8F9FA;
+                color: #3E2723;
                 font-family: 'Segoe UI', sans-serif;
             }
         """)
         
     def create_header(self, parent_layout):
-        """Create Material Design header"""
+        """Create custom themed header"""
         header_frame = QFrame()
         header_frame.setFixedHeight(80)
         header_frame.setStyleSheet("""
             QFrame {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2196F3, stop:1 #21CBF3);
+                    stop:0 #4A90E2, stop:0.7 #87CEEB, stop:1 #B0E0E6);
                 border: none;
             }
         """)
         
         # Add shadow to header
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(8)
+        shadow.setBlurRadius(10)
         shadow.setXOffset(0)
-        shadow.setYOffset(2)
-        shadow.setColor(QColor(0, 0, 0, 30))
+        shadow.setYOffset(3)
+        shadow.setColor(QColor(0, 0, 0, 25))
         header_frame.setGraphicsEffect(shadow)
         
         header_layout = QHBoxLayout(header_frame)
@@ -280,7 +443,7 @@ class ToolMainWindow(QMainWindow):
         
         subtitle_label = QLabel("Advanced data analysis and processing")
         subtitle_label.setFont(QFont("Segoe UI", 14))
-        subtitle_label.setStyleSheet("QLabel { color: rgba(255, 255, 255, 0.8); }")
+        subtitle_label.setStyleSheet("QLabel { color: rgba(255, 255, 255, 0.9); }")
         
         title_layout = QVBoxLayout()
         title_layout.addWidget(title_label)
@@ -293,11 +456,11 @@ class ToolMainWindow(QMainWindow):
         parent_layout.addWidget(header_frame)
         
     def create_path_section(self, parent_layout):
-        """Create Material Design path selection section"""
+        """Create file selection section with custom theme"""
         # Section title
-        section_title = QLabel("Folder Selection")
+        section_title = QLabel("Excel Mapping File Selection")
         section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
-        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        section_title.setStyleSheet("color: #5D4037; margin-bottom: 8px;")
         parent_layout.addWidget(section_title)
         
         # Path card
@@ -307,12 +470,12 @@ class ToolMainWindow(QMainWindow):
         path_layout.setSpacing(16)
         
         # Browse button
-        self.browse_button = MaterialButton("Browse Folder", color="#FF9800", hover_color="#F57C00")
-        self.browse_button.clicked.connect(self.browse_folder)
+        self.browse_button = MaterialButton("Browse Excel", color="#D4B896", hover_color="#BCAA83", text_color="#3E2723")
+        self.browse_button.clicked.connect(self.browse_file)
         self.browse_button.setFixedWidth(160)
         
         # Path label
-        self.path_label = QLabel("No folder selected")
+        self.path_label = QLabel("No mapping Excel file selected")
         self.path_label.setStyleSheet("""
             QLabel {
                 background-color: #F5F5F5;
@@ -320,7 +483,7 @@ class ToolMainWindow(QMainWindow):
                 border-radius: 8px;
                 padding: 12px 16px;
                 font-size: 14px;
-                color: #757575;
+                color: #8D6E63;
             }
         """)
         self.path_label.setMinimumHeight(20)
@@ -331,10 +494,10 @@ class ToolMainWindow(QMainWindow):
         parent_layout.addWidget(path_card)
         
     def create_buttons_section(self, parent_layout):
-        """Create Material Design action buttons"""
+        """Create action buttons with custom color scheme"""
         section_title = QLabel("Actions")
         section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
-        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        section_title.setStyleSheet("color: #5D4037; margin-bottom: 8px;")
         parent_layout.addWidget(section_title)
         
         buttons_card = MaterialCard()
@@ -342,12 +505,13 @@ class ToolMainWindow(QMainWindow):
         buttons_layout.setContentsMargins(24, 20, 24, 20)
         buttons_layout.setSpacing(16)
         
+        # Custom color scheme for buttons
         button_configs = [
-            ("Pre-load", "#9C27B0", "#7B1FA2"),
-            ("Access Logic", "#2196F3", "#1976D2"),
-            ("Control Check", "#FF5722", "#D84315"),
-            ("Response", "#4CAF50", "#388E3C"),
-            ("Scorecard", "#607D8B", "#455A64")
+            ("Pre-load", "#8D6E63", "#6D4C41"),      # Brown
+            ("Access Logic", "#4A90E2", "#357ABD"),   # Sky Blue
+            ("Control Check", "#A1887F", "#8D6E63"),  # Light Brown
+            ("Response", "#6D4C41", "#5D4037"),       # Dark Brown
+            ("Scorecard", "#9E9E9E", "#757575")       # Grey
         ]
         
         self.action_buttons = {}
@@ -356,8 +520,10 @@ class ToolMainWindow(QMainWindow):
             button = MaterialButton(name, color=color, hover_color=hover_color)
             button.setMinimumHeight(48)
             
-            # Connect Access Logic button to our handler
-            if name == "Access Logic":
+            # Connect buttons to handlers
+            if name == "Pre-load":
+                button.clicked.connect(self.preload_clicked)
+            elif name == "Access Logic":
                 button.clicked.connect(self.access_logic_clicked)
             else:
                 button.clicked.connect(lambda checked, btn_name=name: self.log_message(f"{btn_name} button clicked"))
@@ -368,10 +534,10 @@ class ToolMainWindow(QMainWindow):
         parent_layout.addWidget(buttons_card)
         
     def create_console_section(self, parent_layout):
-        """Create Material Design console section"""
+        """Create console section with custom theme"""
         section_title = QLabel("Console Output")
         section_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Medium))
-        section_title.setStyleSheet("color: #424242; margin-bottom: 8px;")
+        section_title.setStyleSheet("color: #5D4037; margin-bottom: 8px;")
         parent_layout.addWidget(section_title)
         
         console_card = MaterialCard()
@@ -381,8 +547,8 @@ class ToolMainWindow(QMainWindow):
         self.console = QTextEdit()
         self.console.setStyleSheet("""
             QTextEdit {
-                background-color: #263238;
-                color: #4CAF50;
+                background-color: #2F2F2F;
+                color: #4A90E2;
                 font-family: 'Consolas', 'Monaco', monospace;
                 font-size: 12px;
                 border: none;
@@ -391,17 +557,17 @@ class ToolMainWindow(QMainWindow):
                 line-height: 1.4;
             }
             QScrollBar:vertical {
-                background-color: #37474F;
+                background-color: #404040;
                 width: 12px;
                 border-radius: 6px;
             }
             QScrollBar::handle:vertical {
-                background-color: #546E7A;
+                background-color: #8D6E63;
                 border-radius: 6px;
                 min-height: 20px;
             }
             QScrollBar::handle:vertical:hover {
-                background-color: #607D8B;
+                background-color: #A1887F;
             }
         """)
         self.console.setReadOnly(True)
@@ -412,42 +578,147 @@ class ToolMainWindow(QMainWindow):
         
         # Log initial message
         self.log_message("🚀 Tool initialized. Ready for use.", "SUCCESS")
+        self.log_message("📋 Expected Excel format: 'filename', 'path', 'expected_columns' columns", "INFO")
         
-    def browse_folder(self):
-        """Handle folder browsing"""
-        folder_path = QFileDialog.getExistingDirectory(
+    def browse_file(self):
+        """Handle Excel file browsing"""
+        file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Folder",
+            "Select Excel Mapping File",
             "",
-            QFileDialog.Option.ShowDirsOnly
+            "Excel Files (*.xlsx *.xls);;All Files (*)"
         )
         
-        if folder_path:
-            self.selected_path = folder_path
-            self.path_label.setText(folder_path)
+        if file_path:
+            self.selected_path = file_path
+            self.path_label.setText(file_path)
             self.path_label.setStyleSheet("""
                 QLabel {
-                    background-color: #E8F5E8;
-                    border: 2px solid #4CAF50;
+                    background-color: #E8F4FD;
+                    border: 2px solid #4A90E2;
                     border-radius: 8px;
                     padding: 12px 16px;
                     font-size: 14px;
-                    color: #2E7D32;
+                    color: #1565C0;
                     font-weight: 500;
                 }
             """)
-            self.log_message(f"📁 Folder selected: {folder_path}", "SUCCESS")
+            self.log_message(f"📊 Excel mapping file selected: {os.path.basename(file_path)}", "SUCCESS")
+            
+    def preload_clicked(self):
+        """Handle Pre-load button click"""
+        self.log_message("🔄 Pre-load button clicked", "INFO")
         
+        if not self.selected_path:
+            self.log_message("❌ ERROR: No Excel mapping file selected. Please select an Excel file first.", "ERROR")
+            return
+            
+        if not os.path.exists(self.selected_path):
+            self.log_message("❌ ERROR: Selected Excel file does not exist.", "ERROR")
+            return
+            
+        # Disable preload button during processing
+        self.action_buttons["Pre-load"].setEnabled(False)
+        
+        # Get parent directory of Excel file
+        parent_dir = os.path.dirname(self.selected_path)
+        self.log_message(f"📁 Using parent directory: {parent_dir}", "INFO")
+        
+        # Start preload thread
+        self.preload_thread = PreloadThread(self.selected_path, parent_dir)
+        self.preload_thread.log_signal.connect(self.log_message)
+        self.preload_thread.progress_signal.connect(self.show_progress)
+        self.preload_thread.finished_signal.connect(self.preload_finished)
+        self.preload_thread.start()
+        
+    def show_progress(self, message, start_animation):
+        """Show progress with animated dots"""
+        if start_animation:
+            # Start new progress animation
+            if self.progress_thread and self.progress_thread.isRunning():
+                self.progress_thread.stop()
+                self.progress_thread.wait()
+                
+            # Remove previous progress line if exists
+            if self.current_progress_line:
+                # Move cursor to end and add new line
+                cursor = self.console.textCursor()
+                cursor.movePosition(cursor.MoveOperation.End)
+                self.console.setTextCursor(cursor)
+                
+            # Start indefinite progress animation (no duration limit)
+            self.progress_thread = ProgressThread(message, duration=999)  # Very long duration
+            self.progress_thread.progress_signal.connect(self.update_progress_line)
+            self.progress_thread.finished_signal.connect(self.progress_finished)
+            self.progress_thread.start()
+        else:
+            # Stop current progress animation
+            if self.progress_thread and self.progress_thread.isRunning():
+                self.progress_thread.stop()
+                self.progress_thread.wait()
+                self.progress_finished()  # Clean up the progress line
+        
+    def update_progress_line(self, text):
+        """Update the current progress line"""
+        timestamp = pd.Timestamp.now().strftime("%H:%M:%S")
+        color = "#D4B896"  # Yellowish brown for progress
+        
+        # Get current cursor position
+        cursor = self.console.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        
+        # If we have a current progress line, remove it
+        if self.current_progress_line:
+            cursor.movePosition(cursor.MoveOperation.StartOfLine)
+            cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+        
+        # Add the new progress text
+        progress_html = f'<span style="color: #9E9E9E;">[{timestamp}]</span> <span style="color: {color};">{text}</span>'
+        cursor.insertHtml(progress_html)
+        
+        self.current_progress_line = text
+        
+        # Auto-scroll to bottom
+        self.console.verticalScrollBar().setValue(
+            self.console.verticalScrollBar().maximum()
+        )
+        
+    def progress_finished(self):
+        """Called when progress animation finishes"""
+        if self.current_progress_line:
+            # Move to end and add a new line
+            cursor = self.console.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            cursor.insertText("\n")
+            self.console.setTextCursor(cursor)
+            self.current_progress_line = None
+            
+    def preload_finished(self, success, message):
+        """Handle preload completion"""
+        # Re-enable preload button
+        self.action_buttons["Pre-load"].setEnabled(True)
+        
+        # Stop any running progress thread
+        if self.progress_thread and self.progress_thread.isRunning():
+            self.progress_thread.stop()
+            self.progress_thread.wait()
+            
+        if success:
+            self.log_message(f"✅ {message}", "SUCCESS")
+        else:
+            self.log_message(f"❌ {message}", "ERROR")
+            
     def access_logic_clicked(self):
         """Handle Access Logic button click"""
         self.log_message("🔍 Access Logic button clicked", "INFO")
         
         if not self.selected_path:
-            self.log_message("❌ ERROR: No folder selected. Please select a folder first.", "ERROR")
+            self.log_message("❌ ERROR: No Excel mapping file selected. Please select an Excel file first.", "ERROR")
             return
             
         # Simulate checking for missing elements
-        self.log_message("⏳ Analyzing folder contents for missing elements...", "INFO")
+        self.log_message("⏳ Analyzing mapping data for missing elements...", "INFO")
         
         # Example: simulate missing elements
         missing_elements = ["bhopal", "indore", "nagpur"]
@@ -493,24 +764,37 @@ class ToolMainWindow(QMainWindow):
             self.log_message(f"   • {combo}", "SUCCESS")
         
     def log_message(self, message, level="INFO"):
-        """Add styled message to console"""
+        """Add styled message to console with custom color scheme"""
         colors = {
-            "INFO": "#4CAF50",
-            "SUCCESS": "#8BC34A", 
-            "WARNING": "#FF9800",
-            "ERROR": "#F44336"
+            "INFO": "#4A90E2",        # Sky Blue
+            "SUCCESS": "#8D6E63",     # Brown
+            "WARNING": "#D4B896",     # Yellowish Brown
+            "ERROR": "#A1887F"        # Light Brown
         }
         
-        color = colors.get(level, "#4CAF50")
+        color = colors.get(level, "#4A90E2")
         timestamp = pd.Timestamp.now().strftime("%H:%M:%S")
         
-        self.console.append(f'<span style="color: #90A4AE;">[{timestamp}]</span> '
+        self.console.append(f'<span style="color: #9E9E9E;">[{timestamp}]</span> '
                           f'<span style="color: {color};">{message}</span>')
         
         # Auto-scroll to bottom
         self.console.verticalScrollBar().setValue(
             self.console.verticalScrollBar().maximum()
         )
+
+    def closeEvent(self, event):
+        """Handle application close event"""
+        # Stop any running threads
+        if self.preload_thread and self.preload_thread.isRunning():
+            self.preload_thread.stop()
+            self.preload_thread.wait()
+            
+        if self.progress_thread and self.progress_thread.isRunning():
+            self.progress_thread.stop()
+            self.progress_thread.wait()
+            
+        event.accept()
 
 
 def main():
