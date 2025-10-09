@@ -1,0 +1,19 @@
+payload = {
+    "message": {
+        "subject": "Raw MIME Test",
+        "body": {
+            "contentType": "HTML",
+            "content": "<html><body><p>Test</p><img src='cid:img1'></body></html>"
+        },
+        "toRecipients": [{"emailAddress": {"address": "you@company.com"}}],
+        "attachments": [{
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "pixel.png",
+            "contentType": "image/png",
+            "contentId": "img1",
+            "isInline": True,
+            # 1x1 red pixel PNG
+            "contentBytes": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+        }]
+    }
+}
