@@ -1,79 +1,89 @@
-import sqlite3
-import pyodbc
+import re
+import base64
+from bs4 import BeautifulSoup
+import mammoth  # or your conversion library
 
-def get_sqlite_schema_and_data(sqlite_db_path):
-    conn = sqlite3.connect(sqlite_db_path)
-    cursor = conn.cursor()
+# Step 1: Convert DOCX to HTML
+with open("document.docx", "rb") as docx_file:
+    result = mammoth.convert_to_html(docx_file)
+    html_content = result.value
 
-    # Get all table names
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-    tables = [row[0] for row in cursor.fetchall()]
+# Step 2: Parse HTML and extract images
+soup = BeautifulSoup(html_content, 'html.parser')
+images = soup.find_all('img')
 
-    schema = {}
-    data = {}
+attachments = []
+image_counter = 1
 
-    for table in tables:
-        # Get create statement
-        cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
-        create_stmt = cursor.fetchone()[0]
-
-        # Get data
-        cursor.execute(f"SELECT * FROM {table}")
-        rows = cursor.fetchall()
-        col_names = [description[0] for description in cursor.description]
-
-        schema[table] = create_stmt
-        data[table] = {"columns": col_names, "rows": rows}
-
-    conn.close()
-    return schema, data
-
-def convert_sqlite_to_access(sqlite_db_path, access_db_path):
-    # Step 1: Extract schema and data from SQLite
-    schema, data = get_sqlite_schema_and_data(sqlite_db_path)
-
-    # Step 2: Connect to Access DB
-    conn_str = (
-        r"DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};"
-        f"DBQ={access_db_path};"
-    )
-    access_conn = pyodbc.connect(conn_str)
-    access_cursor = access_conn.cursor()
-
-    for table, create_stmt in schema.items():
-        # Replace SQLite types with Access types (basic mapping)
-        create_stmt = create_stmt.replace("AUTOINCREMENT", "AUTOINCREMENT")
-        create_stmt = create_stmt.replace("INTEGER", "INT")
-        create_stmt = create_stmt.replace("TEXT", "TEXT")
-        create_stmt = create_stmt.replace("REAL", "DOUBLE")
-
+# Step 3: Process each image
+for img in images:
+    src = img.get('src', '')
+    
+    # Handle different src formats
+    if src:
+        # Generate unique content ID
+        content_id = f"image{image_counter}@contoso.com"
+        
+        # Read the actual image file
+        # Adjust this based on where your images are stored
         try:
-            print(f"Creating table {table}...")
-            access_cursor.execute(f"DROP TABLE {table}")  # Just in case
-        except:
-            pass
+            # If src is a file path
+            if src.startswith('file:///'):
+                image_path = src.replace('file:///', '')
+            elif src.startswith('word/media/'):
+                # Extract from DOCX structure
+                image_path = src
+            else:
+                image_path = src
+            
+            # Read and encode image
+            with open(image_path, 'rb') as img_file:
+                image_data = base64.b64encode(img_file.read()).decode('utf-8')
+            
+            # Determine content type
+            if image_path.lower().endswith('.png'):
+                content_type = 'image/png'
+            elif image_path.lower().endswith(('.jpg', '.jpeg')):
+                content_type = 'image/jpeg'
+            elif image_path.lower().endswith('.gif'):
+                content_type = 'image/gif'
+            else:
+                content_type = 'image/png'
+            
+            # Create attachment
+            attachments.append({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                "name": f"image{image_counter}.png",
+                "contentType": content_type,
+                "contentId": content_id,
+                "isInline": True,
+                "contentBytes": image_data
+            })
+            
+            # Replace src with CID
+            img['src'] = f"cid:{content_id}"
+            
+            image_counter += 1
+            
+        except Exception as e:
+            print(f"Error processing image {src}: {e}")
 
-        access_cursor.execute(create_stmt)
+# Step 4: Get updated HTML
+updated_html = str(soup)
 
-        # Insert data
-        rows = data[table]["rows"]
-        cols = data[table]["columns"]
-        placeholders = ','.join(['?'] * len(cols))
-        col_names = ','.join(cols)
+# Step 5: Send email
+payload = {
+    "message": {
+        "subject": "Document with images",
+        "body": {
+            "contentType": "HTML",
+            "content": updated_html
+        },
+        "toRecipients": [{
+            "emailAddress": {"address": "your-email@company.com"}
+        }],
+        "attachments": attachments
+    }
+}
 
-        print(f"Inserting {len(rows)} rows into {table}...")
-        for row in rows:
-            access_cursor.execute(
-                f"INSERT INTO {table} ({col_names}) VALUES ({placeholders})", row
-            )
-
-    access_conn.commit()
-    access_cursor.close()
-    access_conn.close()
-    print("Migration complete!")
-
-# ==== Example Usage ====
-sqlite_file = r"C:\path\to\your\source.sqlite"
-access_file = r"C:\path\to\your\target.accdb"
-
-convert_sqlite_to_access(sqlite_file, access_file)
+response = requests.post(url, headers=headers, data=json.dumps(payload))
